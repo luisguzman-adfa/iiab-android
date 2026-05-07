@@ -1,3 +1,9 @@
-[submodule "controller/app/src/main/jni/hev-socks5-tunnel"]
-	path = controller/app/src/main/jni/hev-socks5-tunnel
-	url = https://github.com/heiher/hev-socks5-tunnel
+[submodule "controller2/termux-core/termux-source"]
+	path = controller2/termux-core/termux-source
+	url = https://github.com/termux/termux-app.git
+[submodule "termux-source"]
+	path = termux-source
+	url = https://github.com/termux/termux-app.git
+[submodule "controller2/termux-source"]
+	path = controller2/termux-source
+	url = https://github.com/termux/termux-app.git
