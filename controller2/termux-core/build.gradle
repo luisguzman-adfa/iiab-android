@@ -2,8 +2,25 @@ plugins {
     id 'com.android.library'
 }
 
+// 1. Task to copy and patch Termux source code on the fly
+// (This prevents us from modifying the original git submodule)
+task patchTermuxSources(type: Copy) {
+    from 'termux-source'
+    into "$buildDir/generated/patched_termux"
+    include '**/*.java'
+
+    // We filter line by line to redirect rogue R's to the main namespace
+    filter { String line ->
+        line.replaceAll('import com.termux.view.R;', 'import com.termux.shared.R;')
+    }
+}
+
+// We ensure that the task runs before trying to compile Java
+preBuild.dependsOn patchTermuxSources
+
 android {
-    namespace 'org.iiab.termuxcore'
+    // 2. We use the exact namespace that Termux expects
+    namespace 'com.termux.shared'
     compileSdk 34
 
     defaultConfig {
@@ -17,7 +34,7 @@ android {
                 cFlags "-fno-exceptions", "-fno-rtti"
                 // --- THE PATCH FOR ANDROID 15 (16 KB Page Size) ---
                 arguments "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384",
-                          "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                        "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
             }
         }
         ndk {
@@ -35,12 +52,14 @@ android {
     // --- 3. THE MASTER TRICK: CODE HIJACKING ---
     sourceSets {
         main {
+            // We read the Java code from our temporary patched folder
             java.srcDirs = [
                     'src/main/java',
-                    'termux-source/termux-shared/src/main/java',
-                    'termux-source/terminal-emulator/src/main/java',
-                    'termux-source/terminal-view/src/main/java'
+                    "$buildDir/generated/patched_termux/termux-shared/src/main/java",
+                    "$buildDir/generated/patched_termux/terminal-emulator/src/main/java",
+                    "$buildDir/generated/patched_termux/terminal-view/src/main/java"
             ]
+            // We can read the resources directly from the original submodule
             res.srcDirs = [
                     'src/main/res',
                     'termux-source/termux-shared/src/main/res',
