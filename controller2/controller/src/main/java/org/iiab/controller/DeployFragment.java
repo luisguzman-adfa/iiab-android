@@ -2335,7 +2335,7 @@ public class DeployFragment extends Fragment {
                                 android.widget.RadioButton rb = new android.widget.RadioButton(requireContext());
                                 rb.setId(View.generateViewId());
                                 rb.setText(String.format(java.util.Locale.US, "%-22s %5.1f GB", vk, size));
-                                rb.setTextColor(Color.parseColor("#CCCCCC"));
+                                rb.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_primary));
                                 rb.setTypeface(Typeface.MONOSPACE);
                                 rb.setTag(vk);
                                 rgVariants.addView(rb);
