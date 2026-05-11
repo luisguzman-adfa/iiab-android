@@ -267,7 +267,7 @@ public class UsageFragment extends Fragment implements View.OnClickListener {
             button_browse_content.setEnabled(true);
             button_browse_content.setBackgroundTintList(ContextCompat.getColorStateList(requireContext(), R.color.btn_explore_disabled));
             button_browse_content.setAlpha(1.0f);
-            button_browse_content.setTextColor(Color.parseColor("#888888"));
+            button_browse_content.setTextColor(Color.WHITE);
         } else if (mainActivity.isNegotiating) {
             button_browse_content.setEnabled(true);
             button_browse_content.setTextColor(Color.WHITE);

@@ -1186,7 +1186,7 @@ public class DeployFragment extends Fragment {
                                     }
 
                                     // PIPELINE PHASE 3: Companion Data
-                                    if (chkCompanionData.isChecked() && (safeTier == InstallationPlanner.Tier.STANDARD || safeTier == InstallationPlanner.Tier.FULL)) {
+                                    if (chkCompanionData.isChecked()) {
 
                                         // A. Edit YAML safely via Regex BEFORE booting PRoot
                                         editLocalVarsForMaps(debianRootfs, safeTier);
@@ -1485,7 +1485,7 @@ public class DeployFragment extends Fragment {
         getActivity().runOnUiThread(() -> btnFastInstall.setText("Configuring Maps..."));
 
         if (prootEngine == null) prootEngine = new PRootEngine();
-        String installCmd = "cd /opt/iiab/iiab && ./runrole maps";
+        String installCmd = "cd /opt/iiab/iiab && ./runrole --reinstall maps";
 
         prootEngine.executeInContainer(requireContext(), debianRootfs.getAbsolutePath(), installCmd, new PRootEngine.OutputListener() {
             @Override public void onOutputLine(String line) {
@@ -2335,7 +2335,7 @@ public class DeployFragment extends Fragment {
                                 android.widget.RadioButton rb = new android.widget.RadioButton(requireContext());
                                 rb.setId(View.generateViewId());
                                 rb.setText(String.format(java.util.Locale.US, "%-22s %5.1f GB", vk, size));
-                                rb.setTextColor(Color.parseColor("#CCCCCC"));
+                                rb.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_primary));
                                 rb.setTypeface(Typeface.MONOSPACE);
                                 rb.setTag(vk);
                                 rgVariants.addView(rb);
