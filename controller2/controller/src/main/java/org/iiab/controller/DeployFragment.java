@@ -2037,19 +2037,30 @@ public class DeployFragment extends Fragment {
     // =========================================================================================
 
     private void enableSystemProtection() {
-        Intent intent = new Intent(requireContext(), WatchdogService.class);
-        intent.setAction(WatchdogService.ACTION_START);
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            requireContext().startForegroundService(intent);
-        } else {
-            requireContext().startService(intent);
-        }
+        // SAFE CHECK
+        if (!isAdded() || getContext() == null) return;
+
+        try {
+            Intent intent = new Intent(requireContext(), WatchdogService.class);
+            intent.setAction(WatchdogService.ACTION_START);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                requireContext().startForegroundService(intent);
+            } else {
+                requireContext().startService(intent);
+            }
+        } catch (Exception ignored) {}
     }
 
     private void disableSystemProtection() {
-        Intent intent = new Intent(requireContext(), WatchdogService.class);
-        intent.setAction(WatchdogService.ACTION_STOP);
-        requireContext().startService(intent);
+        // SAFE CHECK
+        if (!isAdded() || getContext() == null) return;
+
+        try {
+            Intent intent = new Intent(requireContext(), WatchdogService.class);
+//            intent.setAction(WatchdogService.ACTION_START);
+            intent.setAction(WatchdogService.ACTION_STOP);
+            requireContext().startService(intent);
+        } catch (Exception ignored) {}
     }
 
     private void saveQueueToPrefs() {

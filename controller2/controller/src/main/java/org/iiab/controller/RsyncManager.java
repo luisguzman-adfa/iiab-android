@@ -133,7 +133,7 @@ public class RsyncManager {
 
                 ProcessBuilder pb = new ProcessBuilder(
                         rsyncBin.getAbsolutePath(),
-                        "-avz",
+                        "-av",
                         "--delete",
                         "--info=progress2",
                         "--partial",
@@ -182,7 +182,7 @@ public class RsyncManager {
 
                 if (isCancelled) {
                     mainHandler.post(() -> listener.onError(context.getString(R.string.rsync_error_cancelled)));
-                } else if (exitCode == 0) {
+                } else if (exitCode == 0 || exitCode == 23 || exitCode == 24) {
                     mainHandler.post(() -> listener.onComplete(context.getString(R.string.rsync_success_complete)));
                 }
                 // PHASE 1 FIX: Clean handling of unexpected server drops (Codes 10, 12, 20 are socket/stream errors)
@@ -228,7 +228,7 @@ public class RsyncManager {
 
                 ProcessBuilder pb = new ProcessBuilder(
                         rsyncBin.getAbsolutePath(),
-                        "-avz",
+                        "-av",
                         "--delete",
                         "--dry-run",
                         "--stats",
@@ -264,7 +264,7 @@ public class RsyncManager {
 
                 if (isCancelled) {
                     mainHandler.post(() -> listener.onError(context.getString(R.string.rsync_error_dry_run_cancelled)));
-                } else if (exitCode == 0 || exitCode == 24) {
+                } else if (exitCode == 0 || exitCode == 23 || exitCode == 24) {
                     final long finalBytes = totalTransferredBytes;
                     mainHandler.post(() -> listener.onCalculated(finalBytes));
                 } else {

@@ -343,6 +343,12 @@ public class SyncFragment extends Fragment {
                     if (finalReachable) {
                         File destDir = new File(requireContext().getFilesDir(), "rootfs/installed-rootfs/iiab");
 
+                        // --- PREVENT ERROR 23 DUE MISSING FOLDER ---
+                        if (!destDir.exists()) {
+                            destDir.mkdirs();
+                        }
+                        // --------------------------------------------------
+
                         // DRY-RUN PHASE
                         txtTransferFilename.setText(getString(R.string.sync_msg_calculating));
 

@@ -1059,10 +1059,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void startDownload(String downloadUrl) {
-        // Remove old files preventing overlap
+        // 1. We extract the actual file name from the end of the URL
+        String apkName = android.net.Uri.parse(downloadUrl).getLastPathSegment();
+        if (apkName == null || !apkName.endsWith(".apk")) {
+            apkName = "iiab_update.apk"; // Fallback just in case
+        }
+
+        // 2. We save the name in memory so that it is not forgotten if the app closes
+        getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE)
+                .edit().putString("ota_apk_name", apkName).apply();
+
+        // 3. We delete previous failed downloads with THIS same name
         java.io.File oldApk = new java.io.File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                "iiab_update.apk"
+                apkName
         );
         if (oldApk.exists()) {
             oldApk.delete();
@@ -1072,10 +1082,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         request.setTitle(getString(R.string.download_title));
         request.setDescription(getString(R.string.download_description));
-
+        request.setMimeType("application/vnd.android.package-archive");
         request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
 
-        request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "iiab_update.apk");
+        // 4. We tell DownloadManager to use the dynamic name
+        request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, apkName);
 
         android.app.DownloadManager manager = (android.app.DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
         if (manager != null) {
@@ -1095,9 +1106,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     };
 
     private void installApk() {
+        String apkName = getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE)
+                .getString("ota_apk_name", "iiab_update.apk");
+
         java.io.File apkFile = new java.io.File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                "iiab_update.apk"
+                apkName
         );
 
         if (apkFile.exists()) {
@@ -1111,8 +1125,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
-            startActivity(intent);
+            List<android.content.pm.ResolveInfo> resInfoList = getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            for (android.content.pm.ResolveInfo resolveInfo : resInfoList) {
+                String packageName = resolveInfo.activityInfo.packageName;
+                grantUriPermission(packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+
+            try {
+                startActivity(intent);
+            } catch (Exception e) {
+                Log.e(TAG, "OTA: Error launching installer", e);
+                Toast.makeText(this, "Error launching installer. You may need to install the downloaded APK manually from your Downloads folder.", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.e(TAG, "OTA: Downloaded APK file not found at " + apkFile.getAbsolutePath());
         }
     }
 
