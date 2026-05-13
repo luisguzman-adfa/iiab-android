@@ -1253,18 +1253,25 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 File loginScript = new File(hostBinDir, "iiab-login");
                 File rootfsDir = new File(getFilesDir(), "rootfs/installed-rootfs/iiab");
                 File libproot = new File(getApplicationInfo().nativeLibraryDir, "libproot.so");
-                File tmpDir = new File(getCacheDir(), "proot_tmp");
+                File prootLoader = new File(getApplicationInfo().nativeLibraryDir, "libproot-loader.so");
+                File prootLoader32 = new File(getApplicationInfo().nativeLibraryDir, "libproot-loader32.so");
+                File tmpDir = new File(getFilesDir(), "proot_tmp");
+                if (!tmpDir.exists()) tmpDir.mkdirs();
 
-                // We built the titanic PRoot command and saved it in a script
+                // We built the complete PRoot command and saved it in a script
                 StringBuilder script = new StringBuilder();
                 script.append("#!/system/bin/sh\n");
                 script.append("echo 'Entering IIAB Debian Environment...'\n");
                 script.append("export PROOT_TMP_DIR=").append(tmpDir.getAbsolutePath()).append("\n");
+                script.append("export PROOT_LOADER=").append(prootLoader.getAbsolutePath()).append("\n");
+                script.append("export PROOT_LOADER_32=").append(prootLoader32.getAbsolutePath()).append("\n");
+
                 script.append(libproot.getAbsolutePath())
-                        .append(" --sysvipc -0 -k 6.1.0 -r ").append(rootfsDir.getAbsolutePath())
+                        // DPKG fix: Added --link2symlink
+                        .append(" --sysvipc -0 --link2symlink -k 6.1.0 -r ").append(rootfsDir.getAbsolutePath())
                         .append(" -b /dev -b /proc -b /sys -b /storage/emulated/0:/sdcard ")
                         .append(" -b ").append(tmpDir.getAbsolutePath()).append(":/tmp ")
-                        .append(" -w /root /bin/bash -l -i\n"); // <- We started an interactive bash session.
+                        .append(" -w /root /bin/bash -l -i\n");
 
                 java.io.FileOutputStream fos = new java.io.FileOutputStream(loginScript);
                 fos.write(script.toString().getBytes());

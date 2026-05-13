@@ -89,9 +89,6 @@ public class PRootEngine {
 
                 args.add("-b");
                 args.add("/dev");
-                File shmDir = new File(context.getCacheDir(), "proot_tmp");
-                if (!shmDir.exists()) shmDir.mkdirs();
-                args.add("-b"); args.add(shmDir.getAbsolutePath() + ":/dev/shm");
                 args.add("-b");
                 args.add("/proc");
                 args.add("-b");
@@ -125,19 +122,13 @@ public class PRootEngine {
                 args.add(sdcard.getAbsolutePath() + ":/sdcard");
 
                 // 3. Robust Temp directory management
-                File prootTmp = new File(context.getCacheDir(), "proot_tmp");
-                if (!prootTmp.exists()) prootTmp.mkdirs();
-                String tmpPath = prootTmp.getCanonicalPath();
+                File prootTmpHost = new File(context.getFilesDir(), "proot_tmp");
+                if (!prootTmpHost.exists()) prootTmpHost.mkdirs();
+                String prootTmpPath = prootTmpHost.getCanonicalPath();
 
-                // CRITICAL FIX: The host path MUST exist inside the guest rootfs for PRoot to bind it!
-                File guestTmpDir = new File(canonicalRootfs, tmpPath.substring(1));
-                if (!guestTmpDir.exists()) guestTmpDir.mkdirs();
-
-                // Double Bind Mount Magic
+                // Map the host folder to /tmp within the guest OS (Standard Linux)
                 args.add("-b");
-                args.add(tmpPath + ":" + tmpPath);
-                args.add("-b");
-                args.add(tmpPath + ":/tmp");
+                args.add(prootTmpPath + ":/tmp");
 
                 // 4. Set Working Directory
                 args.add("-w");
@@ -169,7 +160,7 @@ public class PRootEngine {
                 if (loader32.exists())
                     pb.environment().put("PROOT_LOADER_32", loader32.getAbsolutePath());
 
-                pb.environment().put("PROOT_TMP_DIR", tmpPath);
+                pb.environment().put("PROOT_TMP_DIR", prootTmpPath);
                 pb.environment().put("TMPDIR", "/tmp");
                 pb.environment().put("HOME", "/root");
                 pb.environment().put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
@@ -248,9 +239,6 @@ public class PRootEngine {
 
                 args.add("-b");
                 args.add("/dev");
-                File shmDir = new File(context.getCacheDir(), "proot_tmp");
-                if (!shmDir.exists()) shmDir.mkdirs();
-                args.add("-b"); args.add(shmDir.getAbsolutePath() + ":/dev/shm");
                 args.add("-b");
                 args.add("/proc");
                 args.add("-b");
@@ -260,17 +248,12 @@ public class PRootEngine {
                 args.add("-b");
                 args.add(sdcard.getAbsolutePath() + ":/sdcard");
 
-                File prootTmp = new File(context.getCacheDir(), "proot_tmp");
-                if (!prootTmp.exists()) prootTmp.mkdirs();
-                String tmpPath = prootTmp.getCanonicalPath();
-
-                File guestTmpDir = new File(canonicalRootfs, tmpPath.substring(1));
-                if (!guestTmpDir.exists()) guestTmpDir.mkdirs();
+                File prootTmpHost = new File(context.getFilesDir(), "proot_tmp");
+                if (!prootTmpHost.exists()) prootTmpHost.mkdirs();
+                String prootTmpPath = prootTmpHost.getCanonicalPath();
 
                 args.add("-b");
-                args.add(tmpPath + ":" + tmpPath);
-                args.add("-b");
-                args.add(tmpPath + ":/tmp");
+                args.add(prootTmpPath + ":/tmp");
 
                 args.add("-w");
                 args.add("/root");
@@ -290,7 +273,7 @@ public class PRootEngine {
                 if (loader32.exists())
                     pb.environment().put("PROOT_LOADER_32", loader32.getAbsolutePath());
 
-                pb.environment().put("PROOT_TMP_DIR", tmpPath);
+                pb.environment().put("PROOT_TMP_DIR", prootTmpPath);
                 pb.environment().put("TMPDIR", "/tmp");
                 pb.environment().put("HOME", "/root");
                 pb.environment().put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
