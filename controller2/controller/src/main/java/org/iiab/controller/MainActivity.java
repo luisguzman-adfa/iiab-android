@@ -102,6 +102,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Runnable serverCheckRunnable;
     private static final int CHECK_INTERVAL_MS = 3000;
     public PRootEngine serverEngine;
+    private float currentTerminalFontSize = 24f;
 
     // Load native C++ engine
     static {
@@ -1174,10 +1175,23 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
             @Override
             public void onCopyTextToClipboard(com.termux.terminal.TerminalSession session, String text) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                android.content.ClipData clip = android.content.ClipData.newPlainText("terminal", text);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(clip);
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Copied text", Toast.LENGTH_SHORT).show());
+                }
             }
 
             @Override
             public void onPasteTextFromClipboard(com.termux.terminal.TerminalSession session) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0) {
+                    CharSequence text = clipboard.getPrimaryClip().getItemAt(0).getText();
+                    if (text != null && terminalSession != null) {
+                        terminalSession.write(text.toString());
+                    }
+                }
             }
 
             @Override
@@ -1300,13 +1314,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     2000,
                     client
             );
-            terminalView.setTextSize(24);
+            terminalView.setTextSize((int) currentTerminalFontSize);
 
             // --- VIEW CLIENT (Touches, Zoom & Keyboard) ---
             terminalView.setTerminalViewClient(new com.termux.view.TerminalViewClient() {
                 @Override
                 public float onScale(float scale) {
-                    return scale;
+                    currentTerminalFontSize *= scale;
+
+                    if (currentTerminalFontSize < 10f) currentTerminalFontSize = 10f;
+                    if (currentTerminalFontSize > 80f) currentTerminalFontSize = 80f;
+
+                    terminalView.setTextSize((int) currentTerminalFontSize);
+                    return 1.0f;
                 }
 
                 // --- THE ESCAPE TAP (Crucial for Debugging Limbo Sessions) ---
