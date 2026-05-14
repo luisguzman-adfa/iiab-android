@@ -1,11 +1,8 @@
 /*
  ============================================================================
  Name        : MainActivity.java
- Author      : hev <r@hev.cc>
  Contributors: IIAB Project
- Copyright   : Copyright (c) 2025 hev
  Copyright (c) 2026 IIAB Project
- Copyright   : Copyright (c) 2023 xyz
  Description : Main Activity
  ============================================================================
  */
@@ -19,46 +16,26 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
-import androidx.appcompat.app.AlertDialog;
 
 import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.BroadcastReceiver;
-import android.content.ClipData;
-import android.content.res.ColorStateList;
-import android.content.ClipboardManager;
-import android.content.ComponentName;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Environment;
 import android.util.Log;
 import android.view.View;
-import android.graphics.Color;
-import android.view.MotionEvent;
-import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.net.VpnService;
-import android.net.Uri;
-import android.text.method.ScrollingMovementMethod;
 import android.os.Build;
 import android.os.Handler;
 import android.os.PowerManager;
-import android.animation.ObjectAnimator;
-import android.animation.PropertyValuesHolder;
-import android.provider.Settings;
 import android.net.wifi.WifiManager;
 
-import androidx.annotation.NonNull;
-import androidx.biometric.BiometricManager;
-import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.snackbar.Snackbar;
@@ -67,18 +44,13 @@ import com.google.android.material.tabs.TabLayoutMediator;
 
 import androidx.viewpager2.widget.ViewPager2;
 
+import android.view.MotionEvent;
+
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.text.SimpleDateFormat;
-import java.util.concurrent.Executor;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.Proxy;
@@ -86,13 +58,11 @@ import java.net.InetSocketAddress;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
     private static final String TAG = "IIAB-MainActivity";
-    private static final String TERMUX_PERMISSION = "com.termux.permission.RUN_COMMAND";
     public Preferences prefs;
     private ImageButton themeToggle;
     private ImageButton btnSettings;
     private android.widget.ImageView headerIcon;
-    private TextView badgeTermux;
-    private TextView badgeController;
+
     private long updateDownloadId = -1;
     private long lastUpdateCheckTime = 0;
 
@@ -131,6 +101,27 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private final Handler serverCheckHandler = new Handler(android.os.Looper.getMainLooper());
     private Runnable serverCheckRunnable;
     private static final int CHECK_INTERVAL_MS = 3000;
+    public PRootEngine serverEngine;
+    private float currentTerminalFontSize = 24f;
+
+    // Load native C++ engine
+    static {
+        System.loadLibrary("termux");
+    }
+
+    /**
+     * Dummy method to satisfy legacy fragments.
+     * Since we are now a monolithic app with an embedded PRoot environment,
+     * the host is always "installed".
+     */
+    public boolean isTermuxInstalled() {
+        return true;
+    }
+
+    // New variables for the ninja terminal
+    private com.termux.view.TerminalView terminalView;
+    private com.termux.terminal.TerminalSession terminalSession;
+    private com.google.android.material.bottomsheet.BottomSheetBehavior<View> bottomSheetBehavior;
 
     public void invalidateModuleStateTrust() {
         getSharedPreferences("iiab_queue_prefs", Context.MODE_PRIVATE)
@@ -143,14 +134,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         return getSharedPreferences("iiab_queue_prefs", Context.MODE_PRIVATE)
                 .getBoolean("is_module_state_trusted", true);
     }
-    public boolean isTermuxInstalled() {
-        try {
-            getPackageManager().getPackageInfo("com.termux", 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException e) {
-            return false;
-        }
-    }
 
     private final BroadcastReceiver logReceiver = new BroadcastReceiver() {
         @Override
@@ -162,25 +145,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 addToLog(message);
                 if (usageFragment != null) usageFragment.updateLogSizeUI();
             } else if (WatchdogService.ACTION_STATE_STARTED.equals(action)) {
-                long elapsed = System.currentTimeMillis() - pulseStartTime;
-                long fullCycle = 1200;
-
-                // Find out how many milliseconds are left to finish the current wave
-                long remainder = elapsed % fullCycle;
-                long timeToNextCycleEnd = fullCycle - remainder;
-
-                // If the remaining time is too fast (< 1 second), add one more full cycle
-                // so the user actually has time to see the system notification drop down gracefully.
-                if (timeToNextCycleEnd < 1000) {
-                    timeToNextCycleEnd += fullCycle;
-                }
-
-                // Wait exactly until the wave hits 1.0f alpha, then lock it!
-                new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                    if (usageFragment != null) usageFragment.finalizeEntryPulse();
-                }, timeToNextCycleEnd);
+                // Keep the visual sync pulse alive if the UI reloads while protected
+                if (usageFragment != null) usageFragment.startFusionPulse();
             } else if (WatchdogService.ACTION_STATE_STOPPED.equals(action)) {
-                // Service is down! Give it a 1.5 second visual margin, then stop the exit pulse.
+                // Service is down! Give it a visual margin, then stop the exit pulse.
                 new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                     if (usageFragment != null) usageFragment.finalizeExitPulse();
                 }, 1500);
@@ -195,9 +163,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // Intercept launch and redirect to Setup Wizard if first time
         SharedPreferences internalPrefs = getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE);
         if (!internalPrefs.getBoolean(getString(R.string.pref_key_setup_complete), false)) {
-            startActivity(new Intent(this, SetupActivity.class));
-            finish();
-            return;
+            try {
+                startActivity(new Intent(this, SetupActivity.class));
+                finish();
+                return; // We stop the execution of MainActivity right here
+            } catch (android.content.ActivityNotFoundException e) {
+                android.util.Log.w(TAG, "SetupActivity not found. Skipping initial setup.");
+                internalPrefs.edit().putBoolean(getString(R.string.pref_key_setup_complete), true).apply();
+            }
         }
 
         prefs = new Preferences(this);
@@ -221,10 +194,87 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 case 2:
                     tab.setText(R.string.tab_deploy);
                     break;
+                case 3:
+                    tab.setText(R.string.tab_share);
+                    break;
             }
         }).attach();
+
+        // --- START: EASTER EGG & OTA LOGIC ---
         versionFooter = findViewById(R.id.version_text);
         setVersionFooter();
+
+        // Configure hidden bottom sheet
+        View bottomSheet = findViewById(R.id.terminal_bottom_sheet);
+        terminalView = findViewById(R.id.terminal_view);
+        bottomSheetBehavior = com.google.android.material.bottomsheet.BottomSheetBehavior.from(bottomSheet);
+        bottomSheetBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN);
+
+        // 3-second Ninja trigger & OTA Updater
+        versionFooter.setOnTouchListener(new View.OnTouchListener() {
+            private final Handler handler = new Handler(android.os.Looper.getMainLooper());
+            private final Runnable longPressRunnable = () -> {
+                try {
+                    // 3 seconds reached! Expand terminal.
+                    vibrateDevice();
+
+                    // --- TERMINAL RESET NUKE ---
+                    terminalSession = null;
+                    setupTerminalSession();
+
+                    // 1. Force the view to be VISIBLE before expanding
+                    View targetSheet = findViewById(R.id.terminal_bottom_sheet);
+                    if (targetSheet.getVisibility() != View.VISIBLE) {
+                        targetSheet.setVisibility(View.VISIBLE);
+                    }
+
+                    // 2. Bring view to front
+                    targetSheet.bringToFront();
+                    targetSheet.requestLayout();
+
+                    // 3. Change to EXPANDED (100% screen)
+                    bottomSheetBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+                    terminalView.requestFocus();
+
+                } catch (Throwable t) {
+                    // CATCH ABSOLUTELY EVERYTHING (Even native JNI crashes)
+                    new androidx.appcompat.app.AlertDialog.Builder(MainActivity.this)
+                            .setTitle("Terminal Spawn Crash")
+                            .setMessage(android.util.Log.getStackTraceString(t))
+                            .setPositiveButton("OK", null)
+                            .show();
+                }
+            };
+            private long touchStartTime;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        touchStartTime = System.currentTimeMillis();
+                        handler.postDelayed(longPressRunnable, 3000);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        handler.removeCallbacks(longPressRunnable);
+
+                        // --- THE UPDATER (OTA LOGIC) ---
+                        // If released early and it was a quick tap (<500ms), trigger normal OTA update
+                        if (System.currentTimeMillis() - touchStartTime < 500) {
+                            long currentTime = System.currentTimeMillis();
+                            if (currentTime - lastUpdateCheckTime < 10000) {
+                                Toast.makeText(MainActivity.this, R.string.ota_toast_cooldown, Toast.LENGTH_SHORT).show();
+                            } else {
+                                lastUpdateCheckTime = currentTime;
+                                checkForUpdates(true);
+                            }
+                        }
+                        return true;
+                }
+                return false;
+            }
+        });
+
         // Check for version with 10s cooldown span
         versionFooter.setOnClickListener(v -> {
             long currentTime = System.currentTimeMillis();
@@ -261,9 +311,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 new ActivityResultContracts.RequestMultiplePermissions(),
                 result -> {
                     for (Map.Entry<String, Boolean> entry : result.entrySet()) {
-                        if (entry.getKey().equals(TERMUX_PERMISSION)) {
-                            addToLog(getString(entry.getValue() ? R.string.termux_perm_granted : R.string.termux_perm_denied));
-                        } else if (entry.getKey().equals(Manifest.permission.POST_NOTIFICATIONS)) {
+                        if (entry.getKey().equals(Manifest.permission.POST_NOTIFICATIONS)) {
                             addToLog(getString(entry.getValue() ? R.string.notif_perm_granted : R.string.notif_perm_denied));
                         }
                     }
@@ -274,8 +322,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         themeToggle = findViewById(R.id.theme_toggle);
         btnSettings = findViewById(R.id.btn_settings);
         headerIcon = findViewById(R.id.header_icon);
-        badgeTermux = findViewById(R.id.badge_termux);
-        badgeController = findViewById(R.id.badge_controller);
         ImageButton btnShareQr = findViewById(R.id.btn_share_qr);
 
         // Listeners
@@ -339,8 +385,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 permissions.add(Manifest.permission.POST_NOTIFICATIONS);
             }
         }
-        if (ContextCompat.checkSelfPermission(this, TERMUX_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(TERMUX_PERMISSION);
+
+        // ADDED CAMERA PERMISSION REQUEST
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.CAMERA);
         }
 
         if (!permissions.isEmpty()) {
@@ -432,13 +480,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void prepareVpn() {
-        Intent intent = VpnService.prepare(MainActivity.this);
-        if (intent != null) {
-            vpnPermissionLauncher.launch(intent);
-        } else {
-            if (prefs.getEnable()) connectVpn();
-            BatteryUtils.checkAndPromptOptimizations(MainActivity.this, batteryOptLauncher);
-        }
+//        Intent intent = VpnService.prepare(MainActivity.this);
+//        if (intent != null) {
+//            vpnPermissionLauncher.launch(intent);
+//        } else {
+//            if (prefs.getEnable()) connectVpn();
+//            BatteryUtils.checkAndPromptOptimizations(MainActivity.this, batteryOptLauncher);
+//        }
+        BatteryUtils.checkAndPromptOptimizations(MainActivity.this, batteryOptLauncher);
     }
 
     public void startLogSizeUpdates() {
@@ -451,8 +500,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void connectVpn() {
-        Intent intent = new Intent(this, TProxyService.class);
-        startService(intent.setAction(TProxyService.ACTION_CONNECT));
         addToLog(getString(R.string.vpn_permission_granted));
     }
 
@@ -482,7 +529,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         //  Check permissions status
         updateHeaderIconsOpacity();
-        updatePermissionBadges();
+
         // Check battery status whenever returning to the app
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -493,12 +540,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
         updateConnectivityStatus(); // Force instant UI refresh when returning to app
 
-        if (getIntent() != null && getIntent().getBooleanExtra(VpnRecoveryReceiver.EXTRA_RECOVERY, false)) {
-            addToLog(getString(R.string.recovery_pulse_received));
-            Intent vpnIntent = new Intent(this, TProxyService.class);
-            startService(vpnIntent.setAction(TProxyService.ACTION_CONNECT));
-            setIntent(null);
-        }
         if (usageFragment != null && usageFragment.isLogVisible()) {
             startLogSizeUpdates();
         }
@@ -564,35 +605,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // Delegated
     }
 
-    public void handleWatchdogClick() {
-        setWatchdogState(!prefs.getWatchdogEnable());
-    }
-
-    private void setWatchdogState(boolean enable) {
-        prefs.setWatchdogEnable(enable);
-        Intent intent = new Intent(this, WatchdogService.class);
-
-        if (enable) {
-            forceTermuxToForeground();
-            intent.setAction(WatchdogService.ACTION_START);
-            addToLog(getString(R.string.watchdog_started));
-            if (isServerAlive && usageFragment != null) usageFragment.startFusionPulse();
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent);
-            } else {
-                startService(intent);
-            }
-        } else {
-            addToLog(getString(R.string.watchdog_stopped));
-            if (usageFragment != null) usageFragment.startExitPulse();
-            stopService(intent);
-        }
-
-        updateUI();
-        updateUIColorsAndVisibility();
-    }
-
     public void handleControlClick() {
         if (!isServerAlive) {
             Snackbar.make(findViewById(android.R.id.content), R.string.qr_error_no_server, Snackbar.LENGTH_LONG).show();
@@ -628,6 +640,48 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
+    private void createFakeSysData(File rootfsDir) {
+        try {
+            File procDir = new File(rootfsDir, "proc");
+            if (!procDir.exists()) procDir.mkdirs();
+
+            // Fake Uptime (Static 2 mins as you requested)
+            File uptimeFile = new File(procDir, ".uptime");
+            if (!uptimeFile.exists()) {
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(uptimeFile);
+                fos.write("124.08 932.80\n".getBytes());
+                fos.close();
+            }
+
+            // Fake Version (Fake Kernel IIAB)
+            File versionFile = new File(procDir, ".version");
+            if (!versionFile.exists()) {
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(versionFile);
+                fos.write("Linux version 6.17.0-PRoot-IIAB (builder@iiab) (Android NDK) #1 SMP PREEMPT Thu Apr 30 20:00:00 UTC 2026\n".getBytes());
+                fos.close();
+            }
+
+            // Fake Stat (So that Kolibri does not crash reading CPU)
+            File statFile = new File(procDir, ".stat");
+            if (!statFile.exists()) {
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(statFile);
+                fos.write("cpu  1000 0 1000 10000 0 0 0 0 0 0\n".getBytes());
+                fos.close();
+            }
+
+            // Fake LoadAvg
+            File loadavgFile = new File(procDir, ".loadavg");
+            if (!loadavgFile.exists()) {
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(loadavgFile);
+                fos.write("0.00 0.00 0.00 1/1 1\n".getBytes());
+                fos.close();
+            }
+
+        } catch (Exception e) {
+            android.util.Log.e(TAG, "Failed to create fake sysdata", e);
+        }
+    }
+
     public void handleServerLaunchClick(View v) {
         // Set a hard timeout as a safety net
         timeoutRunnable = () -> {
@@ -640,11 +694,45 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         };
         timeoutHandler.postDelayed(timeoutRunnable, getResources().getInteger(R.integer.server_cool_off_duration_ms));
 
-        // Execute the corresponding script command
-        if (!isServerAlive) {
-            startTermuxEnvironmentVisible("--start");
+        File rootfsDir = new File(getFilesDir(), "rootfs/installed-rootfs/iiab");
 
-            // Fallback for Oppo/Xiaomi
+        if (!isServerAlive) {
+            addToLog("Booting IIAB environment natively...");
+            // kernel & uptime
+            createFakeSysData(rootfsDir);
+
+            if (serverEngine != null) {
+                serverEngine.killProcess();
+            }
+            serverEngine = new PRootEngine();
+
+            // THE DOCKER TRICK: We start bash as login (-lc), start pdsm, and block the process with tail
+            // so that PROoot never closes until we kill it.
+            String startCmd = "bash -lc '/usr/local/bin/pdsm start && tail -f /dev/null'";
+
+            serverEngine.executeInContainer(this, rootfsDir.getAbsolutePath(), startCmd, new PRootEngine.OutputListener() {
+                @Override
+                public void onOutputLine(String line) {
+                    runOnUiThread(() -> addToLog("[Server] " + line));
+                }
+
+                @Override
+                public void onProcessExit(int exitCode) {
+                    runOnUiThread(() -> addToLog("[Server] Engine shutdown (Code: " + exitCode + ")"));
+                }
+
+                @Override
+                public void onError(String error) {
+                    runOnUiThread(() -> addToLog("[Server Error] " + error));
+                }
+            });
+            // --- Watchdog injection / foreground service --- //
+            prefs.setWatchdogEnable(true);
+            enableSystemProtection();
+            addToLog(getString(R.string.watchdog_started));
+            if (usageFragment != null) usageFragment.startFusionPulse();
+
+            // Fallback for Oppo/Xiaomi: Notify user if server fails to start
             new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                 if (targetServerState != null && !isServerAlive) {
                     Snackbar.make(v, R.string.termux_stuck_warning, Snackbar.LENGTH_LONG).show();
@@ -652,20 +740,55 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }, getResources().getInteger(R.integer.server_snackbar_delay_ms));
 
         } else {
-            startTermuxEnvironmentVisible("--stop");
+            addToLog("Stopping IIAB environment gracefully...");
 
-            // Turn off Watchdog gracefully when stopping the server manually
-            if (prefs.getWatchdogEnable()) {
-                setWatchdogState(false);
-            }
+            PRootEngine stopEngine = new PRootEngine();
+
+            stopEngine.executeInContainer(this, rootfsDir.getAbsolutePath(), "bash -lc '/usr/local/bin/pdsm stop'", new PRootEngine.OutputListener() {
+                @Override
+                public void onOutputLine(String line) {
+                    runOnUiThread(() -> addToLog("[PDSM Stop] " + line));
+                }
+
+                @Override
+                public void onProcessExit(int exitCode) {
+                    runOnUiThread(() -> {
+                        // 1. Kill the engine instance
+                        if (serverEngine != null) {
+                            serverEngine.killProcess();
+                            serverEngine = null;
+                        }
+
+                        // 2. Zombie Cleanup (Replicating bash pkill script)
+                        new Thread(() -> {
+                            try {
+                                // Force kill any orphaned PRoot children
+                                Runtime.getRuntime().exec(new String[]{"sh", "-c", "killall -9 proot 2>/dev/null"});
+                            } catch (Exception ignored) {
+                            }
+                        }).start();
+
+                        // 3. We turned off the Android Watchdog.
+                        if (prefs.getWatchdogEnable()) {
+                            prefs.setWatchdogEnable(false);
+                            disableSystemProtection();
+                            addToLog(getString(R.string.watchdog_stopped));
+                            if (usageFragment != null) usageFragment.startExitPulse();
+                        }
+                    });
+                }
+
+                @Override
+                public void onError(String error) {
+                    runOnUiThread(() -> addToLog("[Stop Error] " + error));
+                }
+            });
         }
     }
 
     private void toggleService(boolean stop) {
         prefs.setEnable(!stop);
         savePrefs();
-        Intent intent = new Intent(this, TProxyService.class);
-        startService(intent.setAction(stop ? TProxyService.ACTION_DISCONNECT : TProxyService.ACTION_CONNECT));
         addToLog(getString(stop ? R.string.vpn_stopping : R.string.vpn_starting));
 
         if (!stop) {
@@ -725,75 +848,57 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     public void startTermuxEnvironmentVisible(String actionFlag) {
-        Intent intent = new Intent();
-        intent.setClassName("com.termux", "com.termux.app.RunCommandService");
-        intent.setAction("com.termux.RUN_COMMAND");
-
-        intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
-        intent.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/env");
-        intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{
-                "INTENT_MODE=headless",
-                "/data/data/com.termux/files/usr/bin/bash",
-                "/data/data/com.termux/files/usr/bin/iiab-termux",
-                actionFlag
-        });
-
-        intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", false);
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent);
-            } else {
-                startService(intent);
-            }
-            addToLog(getString(R.string.sent_to_termux, actionFlag));
-        } catch (Exception e) {
-            addToLog(getString(R.string.failed_termux_intent, e.getMessage()));
-        }
+        android.util.Log.d(TAG, "Legacy Headless command ignored: " + actionFlag);
+//        Intent intent = new Intent();
+//        intent.setClassName("com.termux", "com.termux.app.RunCommandService");
+//        intent.setAction("com.termux.RUN_COMMAND");
+//
+//        intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
+//        intent.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/env");
+//        intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{
+//                "INTENT_MODE=headless",
+//                "/data/data/com.termux/files/usr/bin/bash",
+//                "/data/data/com.termux/files/usr/bin/iiab-termux",
+//                actionFlag
+//        });
+//
+//        intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", false);
+//        try {
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+//                startForegroundService(intent);
+//            } else {
+//                startService(intent);
+//            }
+//            addToLog(getString(R.string.sent_to_termux, actionFlag));
+//        } catch (Exception e) {
+//            addToLog(getString(R.string.failed_termux_intent, e.getMessage()));
+//        }
     }
 
     // --- TERMUX HEADLESS BRIDGE ---
     public void executeTermuxCommandHeadless(String actionFlag) {
-        try {
-            android.util.Log.d("IIAB-MainActivity", "Firing Visible Intent (Bypassing Background Limits): " + actionFlag);
-            android.content.Intent intent = new android.content.Intent();
-            intent.setClassName("com.termux", "com.termux.app.RunCommandService");
-            intent.setAction("com.termux.RUN_COMMAND");
-            intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
-
-            intent.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/env");
-
-            String[] splitFlags = actionFlag.split(" ");
-            java.util.List<String> argsList = new java.util.ArrayList<>();
-            argsList.add("INTENT_MODE=headless");
-            argsList.add("/data/data/com.termux/files/usr/bin/bash");
-            argsList.add("/data/data/com.termux/files/usr/bin/iiab-termux");
-            argsList.addAll(java.util.Arrays.asList(splitFlags));
-
-            intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", argsList.toArray(new String[0]));
-
-            intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", false);
-            intent.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0");
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                startForegroundService(intent);
-            } else {
-                startService(intent);
-            }
-        } catch (Exception e) {
-            android.util.Log.e("IIAB-MainActivity", "Error firing visible intent", e);
-        }
+        android.util.Log.d(TAG, "Legacy Headless command ignored: " + actionFlag);
     }
 
     private void updateConnectivityStatus() {
-        WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-        boolean isWifiOn = wifiManager != null && wifiManager.isWifiEnabled();
+        boolean isWifiOn = false;
         boolean isHotspotOn = false;
+        WifiManager wifiManager = null; // Declare it outside so that it is accessible throughout the function
+
+        try {
+            wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            isWifiOn = wifiManager != null && wifiManager.isWifiEnabled();
+        } catch (SecurityException e) {
+            android.util.Log.w(TAG, "ACCESS_WIFI_STATE permission denied, ignoring Wi-Fi state");
+        }
 
         try {
             // 1. Try standard reflection (Works on older Androids)
-            java.lang.reflect.Method method = wifiManager.getClass().getDeclaredMethod("isWifiApEnabled");
-            method.setAccessible(true);
-            isHotspotOn = (Boolean) method.invoke(wifiManager);
+            if (wifiManager != null) {
+                java.lang.reflect.Method method = wifiManager.getClass().getDeclaredMethod("isWifiApEnabled");
+                method.setAccessible(true);
+                isHotspotOn = (Boolean) method.invoke(wifiManager);
+            }
         } catch (Throwable e) {
             // 2. Fallback for Android 10+: Check physical network interfaces
             try {
@@ -807,6 +912,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     }
                 }
             } catch (Exception ex) {
+                // Silently ignore
             }
         }
 
@@ -844,29 +950,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
-    private void forceTermuxToForeground() {
-        try {
-            Intent intent = getPackageManager().getLaunchIntentForPackage("com.termux");
-            if (intent != null) {
-                // Bring existing activity to the foreground
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                startActivity(intent);
-                addToLog(getString(R.string.force_termux_foreground));
-            }
-        } catch (Exception e) {
-            addToLog(getString(R.string.termux_invocation_error, e.getMessage()));
-        }
-    }
-
     // --- PERMISSION CHECKERS FOR UI OPACITY ---
 
     private void updateHeaderIconsOpacity() {
-        boolean hasAllControllerPerms = hasNotifPermission() && hasTermuxPermission() && hasBatteryPermission() && hasStoragePermission();
-        boolean hasTermuxStorage = hasTermuxStoragePermission();
+        // Verify only the 4 native permissions required by our new monolithic architecture
+        boolean hasAllPerms = hasNotifPermission() && hasBatteryPermission() && hasStoragePermission();
 
-        // If any vital permission is missing, dim the icons to 40% opacity (0.4f)
-        boolean allPerfect = hasAllControllerPerms && hasTermuxStorage;
-        float targetAlpha = allPerfect ? 1.0f : 0.4f;
+        float targetAlpha = hasAllPerms ? 1.0f : 0.4f;
 
         if (btnSettings != null) btnSettings.setAlpha(targetAlpha);
         if (headerIcon != null) headerIcon.setAlpha(targetAlpha);
@@ -879,29 +969,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         return true;
     }
 
-    private boolean hasTermuxPermission() {
-        return ContextCompat.checkSelfPermission(this, TERMUX_PERMISSION) == PackageManager.PERMISSION_GRANTED;
-    }
-
     private boolean hasBatteryPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             return pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
         }
         return true;
-    }
-
-    private boolean hasTermuxStoragePermission() {
-        try {
-            int result = getPackageManager().checkPermission(Manifest.permission.READ_EXTERNAL_STORAGE, "com.termux");
-            if (result == PackageManager.PERMISSION_GRANTED) return true;
-
-            // Fallback: If Android denies the package query, check if the directory actually exists
-            File stateDir = new File(android.os.Environment.getExternalStorageDirectory(), ".iiab_state");
-            return stateDir.exists();
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private boolean hasStoragePermission() {
@@ -947,7 +1020,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     String changelog = json.getString("changelog");
 
                     // Get current version
-                    int currentVersionCode = BuildConfig.VERSION_CODE;
+                    int currentVersionCode = 0;
+                    try {
+                        currentVersionCode = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
+                    } catch (PackageManager.NameNotFoundException e) {
+                        Log.e(TAG, "OTA: Could not get local version code", e);
+                    }
                     Log.d(TAG, "OTA: Server Version=" + serverVersionCode + " | Local Version=" + currentVersionCode);
 
                     // Check against current version
@@ -982,10 +1060,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void startDownload(String downloadUrl) {
-        // Remove old files preventing overlap
+        // 1. We extract the actual file name from the end of the URL
+        String apkName = android.net.Uri.parse(downloadUrl).getLastPathSegment();
+        if (apkName == null || !apkName.endsWith(".apk")) {
+            apkName = "iiab_update.apk"; // Fallback just in case
+        }
+
+        // 2. We save the name in memory so that it is not forgotten if the app closes
+        getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE)
+                .edit().putString("ota_apk_name", apkName).apply();
+
+        // 3. We delete previous failed downloads with THIS same name
         java.io.File oldApk = new java.io.File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                "iiab_update.apk"
+                apkName
         );
         if (oldApk.exists()) {
             oldApk.delete();
@@ -995,10 +1083,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         request.setTitle(getString(R.string.download_title));
         request.setDescription(getString(R.string.download_description));
-
+        request.setMimeType("application/vnd.android.package-archive");
         request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
 
-        request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, "iiab_update.apk");
+        // 4. We tell DownloadManager to use the dynamic name
+        request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, apkName);
 
         android.app.DownloadManager manager = (android.app.DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
         if (manager != null) {
@@ -1018,88 +1107,393 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     };
 
     private void installApk() {
+        String apkName = getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE)
+                .getString("ota_apk_name", "iiab_update.apk");
+
         java.io.File apkFile = new java.io.File(
                 android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
-                "iiab_update.apk"
+                apkName
         );
 
         if (apkFile.exists()) {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
                     this,
-                    BuildConfig.APPLICATION_ID + ".provider",
+                    getPackageName() + ".provider",
                     apkFile
             );
 
             intent.setDataAndType(apkUri, "application/vnd.android.package-archive");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
 
-            startActivity(intent);
+            List<android.content.pm.ResolveInfo> resInfoList = getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            for (android.content.pm.ResolveInfo resolveInfo : resInfoList) {
+                String packageName = resolveInfo.activityInfo.packageName;
+                grantUriPermission(packageName, apkUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+
+            try {
+                startActivity(intent);
+            } catch (Exception e) {
+                Log.e(TAG, "OTA: Error launching installer", e);
+                Toast.makeText(this, "Error launching installer. You may need to install the downloaded APK manually from your Downloads folder.", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.e(TAG, "OTA: Downloaded APK file not found at " + apkFile.getAbsolutePath());
         }
     }
 
-    // --- PERMISSION BADGES LOGIC ---
-    private void updatePermissionBadges() {
-        // 1. Calculate Controller missing permissions (Purple Badge)
-        int missingController = 0;
-        if (!hasNotifPermission()) missingController++;
-        if (!hasTermuxPermission()) missingController++;
-        if (!hasStoragePermission()) missingController++;
-        if (!hasBatteryPermission()) missingController++;
-        if (VpnService.prepare(this) != null) missingController++; // VPN Permission check
-
-        if (badgeController != null) {
-            if (missingController > 0) {
-                badgeController.setVisibility(View.VISIBLE);
-                badgeController.setText(String.valueOf(missingController));
-            } else {
-                badgeController.setVisibility(View.GONE);
+    private void setupTerminalSession() {
+        com.termux.terminal.TerminalSessionClient client = new com.termux.terminal.TerminalSessionClient() {
+            @Override
+            public void onTextChanged(com.termux.terminal.TerminalSession session) {
+                runOnUiThread(() -> terminalView.invalidate());
             }
-        }
 
-        // --- THE SIGNATURE VERIFIER ---
-        // Let's check if Termux was uninstalled or reinstalled by looking at its unique install timestamp
-        boolean isTermuxInstalled = false;
-        long currentTermuxInstallTime = 0;
+            @Override
+            public void onTitleChanged(com.termux.terminal.TerminalSession session) {
+            }
+
+            // --- THE CLEAN SHUTDOWN (When Bash dies and tells us) ---
+            @Override
+            public void onSessionFinished(com.termux.terminal.TerminalSession session) {
+//                runOnUiThread(() -> {
+//                    // 1. Hide the BottomSheet
+//                    View bottomSheet = findViewById(R.id.terminal_bottom_sheet);
+//                    if (bottomSheet != null) {
+//                        com.google.android.material.bottomsheet.BottomSheetBehavior<?> behavior =
+//                                com.google.android.material.bottomsheet.BottomSheetBehavior.from(bottomSheet);
+//                        behavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN);
+//                    }
+//
+//                    // 2. Destroy the instance so a new one spawns next time
+//                    terminalSession = null;
+//                });
+            }
+
+            @Override
+            public void onCopyTextToClipboard(com.termux.terminal.TerminalSession session, String text) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                android.content.ClipData clip = android.content.ClipData.newPlainText("terminal", text);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(clip);
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Copied text", Toast.LENGTH_SHORT).show());
+                }
+            }
+
+            @Override
+            public void onPasteTextFromClipboard(com.termux.terminal.TerminalSession session) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip().getItemCount() > 0) {
+                    CharSequence text = clipboard.getPrimaryClip().getItemAt(0).getText();
+                    if (text != null && terminalSession != null) {
+                        terminalSession.write(text.toString());
+                    }
+                }
+            }
+
+            @Override
+            public void onBell(com.termux.terminal.TerminalSession session) {
+            }
+
+            @Override
+            public void onColorsChanged(com.termux.terminal.TerminalSession session) {
+            }
+
+            @Override
+            public void onTerminalCursorStateChange(boolean state) {
+            }
+
+            @Override
+            public Integer getTerminalCursorStyle() {
+                return 0;
+            }
+
+            @Override
+            public void setTerminalShellPid(com.termux.terminal.TerminalSession session, int pid) {
+            }
+
+            @Override
+            public void logError(String tag, String message) {
+                Log.e(tag, message);
+            }
+
+            @Override
+            public void logWarn(String tag, String message) {
+                Log.w(tag, message);
+            }
+
+            @Override
+            public void logInfo(String tag, String message) {
+                Log.i(tag, message);
+            }
+
+            @Override
+            public void logDebug(String tag, String message) {
+                Log.d(tag, message);
+            }
+
+            @Override
+            public void logVerbose(String tag, String message) {
+                Log.v(tag, message);
+            }
+
+            @Override
+            public void logStackTraceWithMessage(String tag, String message, Exception e) {
+                Log.e(tag, message, e);
+            }
+
+            @Override
+            public void logStackTrace(String tag, Exception e) {
+                Log.e(tag, "Stack trace", e);
+            }
+        };
+
         try {
-            android.content.pm.PackageInfo info = getPackageManager().getPackageInfo("com.termux", 0);
-            isTermuxInstalled = true;
-            currentTermuxInstallTime = info.firstInstallTime; // The definitive truth
-        } catch (PackageManager.NameNotFoundException e) {
-            isTermuxInstalled = false;
+            // --- DUAL SYSTEM ARCHITECTURE: THE HOST SHELL ---
+            // Instead of diving directly into a fragile PRoot guest environment,
+            // we drop the expert user into the native Android Host Shell.
+            // From here, they can debug, clear directories, or manually trigger PRoot.
+
+            String hostShell = "/system/bin/sh";
+            File workingDirectory = getFilesDir(); // Start in the app's secure root
+
+            try {
+                File hostBinDir = new File(getFilesDir(), "usr/bin");
+                if (!hostBinDir.exists()) hostBinDir.mkdirs();
+
+                File loginScript = new File(hostBinDir, "iiab-login");
+                File rootfsDir = new File(getFilesDir(), "rootfs/installed-rootfs/iiab");
+                File libproot = new File(getApplicationInfo().nativeLibraryDir, "libproot.so");
+                File prootLoader = new File(getApplicationInfo().nativeLibraryDir, "libproot-loader.so");
+                File prootLoader32 = new File(getApplicationInfo().nativeLibraryDir, "libproot-loader32.so");
+                File tmpDir = new File(getFilesDir(), "proot_tmp");
+                if (!tmpDir.exists()) tmpDir.mkdirs();
+
+                // We built the complete PRoot command and saved it in a script
+                StringBuilder script = new StringBuilder();
+                script.append("#!/system/bin/sh\n");
+                script.append("echo 'Entering IIAB Debian Environment...'\n");
+                script.append("export PROOT_TMP_DIR=").append(tmpDir.getAbsolutePath()).append("\n");
+                script.append("export PROOT_LOADER=").append(prootLoader.getAbsolutePath()).append("\n");
+                script.append("export PROOT_LOADER_32=").append(prootLoader32.getAbsolutePath()).append("\n");
+
+                script.append(libproot.getAbsolutePath())
+                        // DPKG fix: Added --link2symlink
+                        .append(" --sysvipc -0 --link2symlink -k 6.1.0 -r ").append(rootfsDir.getAbsolutePath())
+                        .append(" -b /dev -b /proc -b /sys -b /storage/emulated/0:/sdcard ")
+                        .append(" -b ").append(tmpDir.getAbsolutePath()).append(":/tmp ")
+                        .append(" -w /root /bin/bash -l -i\n");
+
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(loginScript);
+                fos.write(script.toString().getBytes());
+                fos.close();
+
+                //
+                loginScript.setExecutable(true);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to create iiab-login script", e);
+            }
+            // Minimal, bulletproof environment variables
+            String[] env = new String[]{
+                    "TERM=xterm-256color",
+                    "HOME=" + workingDirectory.getAbsolutePath(),
+                    // Include the system bins and our W^X fake prefix bins
+                    "PATH=/sbin:/system/sbin:/system/bin:/system/xbin:" + workingDirectory.getAbsolutePath() + "/usr/bin"
+            };
+
+
+            // Launch the native Android shell!
+            terminalSession = new com.termux.terminal.TerminalSession(
+                    hostShell,
+                    workingDirectory.getAbsolutePath(),
+                    new String[]{"-l"}, // Login shell flag
+                    env,
+                    2000,
+                    client
+            );
+            terminalView.setTextSize((int) currentTerminalFontSize);
+
+            // --- VIEW CLIENT (Touches, Zoom & Keyboard) ---
+            terminalView.setTerminalViewClient(new com.termux.view.TerminalViewClient() {
+                @Override
+                public float onScale(float scale) {
+                    currentTerminalFontSize *= scale;
+
+                    if (currentTerminalFontSize < 10f) currentTerminalFontSize = 10f;
+                    if (currentTerminalFontSize > 80f) currentTerminalFontSize = 80f;
+
+                    terminalView.setTextSize((int) currentTerminalFontSize);
+                    return 1.0f;
+                }
+
+                // --- THE ESCAPE TAP (Crucial for Debugging Limbo Sessions) ---
+                @Override
+                public void onSingleTapUp(android.view.MotionEvent e) {
+                    // If the terminal process is dead (e.g., has crashed or shown "[Process completed]"),
+                    // a single tap on the black screen hides the panel and nullifies the session.
+                    if (terminalSession != null && !terminalSession.isRunning()) {
+                        runOnUiThread(() -> {
+                            View bottomSheet = findViewById(R.id.terminal_bottom_sheet);
+                            if (bottomSheet != null) {
+                                com.google.android.material.bottomsheet.BottomSheetBehavior<?> behavior =
+                                        com.google.android.material.bottomsheet.BottomSheetBehavior.from(bottomSheet);
+                                behavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN);
+                            }
+                            // Nullify the session to ensure a clean spawn next time.
+                            terminalSession = null;
+                        });
+                        return; // Event consumed.
+                    }
+
+                    // --- NORMAL BEHAVIOR FOR ALIVE SESSIONS (Focus and Keyboard) ---
+                    terminalView.setFocusable(true);
+                    terminalView.setFocusableInTouchMode(true);
+                    terminalView.requestFocus();
+
+                    terminalView.post(() -> {
+                        android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                        if (imm != null) imm.showSoftInput(terminalView, 0);
+                    });
+                }
+
+                @Override
+                public boolean onLongPress(android.view.MotionEvent e) {
+                    return false;
+                }
+
+                @Override
+                public boolean shouldBackButtonBeMappedToEscape() {
+                    return false;
+                }
+
+                @Override
+                public boolean shouldEnforceCharBasedInput() {
+                    return false;
+                }
+
+                @Override
+                public boolean shouldUseCtrlSpaceWorkaround() {
+                    return false;
+                }
+
+                @Override
+                public boolean isTerminalViewSelected() {
+                    return true;
+                }
+
+                @Override
+                public void copyModeChanged(boolean copyMode) {
+                }
+
+                // --- THE ESCAPE HATCH: Listen for hardware ENTER key on dead sessions ---
+                @Override
+                public boolean onKeyDown(int keyCode, android.view.KeyEvent e, com.termux.terminal.TerminalSession session) {
+                    // Return false to let the terminal emulator handle keys internally.
+                    // This allows onSessionFinished to trigger if keys are processed.
+                    return false;
+                }
+
+                @Override
+                public boolean onKeyUp(int keyCode, android.view.KeyEvent e) {
+                    return false;
+                }
+
+                @Override
+                public boolean readControlKey() {
+                    return false;
+                }
+
+                @Override
+                public boolean readAltKey() {
+                    return false;
+                }
+
+                @Override
+                public boolean readShiftKey() {
+                    return false;
+                }
+
+                @Override
+                public boolean readFnKey() {
+                    return false;
+                }
+
+                @Override
+                public boolean onCodePoint(int codePoint, boolean ctrlDown, com.termux.terminal.TerminalSession session) {
+                    return false;
+                }
+
+                @Override
+                public void onEmulatorSet() {
+                }
+
+                @Override
+                public void logError(String tag, String message) {
+                }
+
+                @Override
+                public void logWarn(String tag, String message) {
+                }
+
+                @Override
+                public void logInfo(String tag, String message) {
+                }
+
+                @Override
+                public void logDebug(String tag, String message) {
+                }
+
+                @Override
+                public void logVerbose(String tag, String message) {
+                }
+
+                @Override
+                public void logStackTraceWithMessage(String tag, String message, Exception e) {
+                }
+
+                @Override
+                public void logStackTrace(String tag, Exception e) {
+                }
+            });
+            // We wait for the view to be drawn before attaching the session to ensure the terminal is ready.
+            terminalView.post(() -> {
+                if (terminalSession != null) {
+                    terminalView.attachSession(terminalSession);
+                }
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start Terminal Session", e);
         }
+    }
 
-        SharedPreferences internalPrefs = getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE);
-        long savedTermuxSignature = internalPrefs.getLong("termux_install_signature", 0);
-
-        // If Termux is missing, OR if the signature changed (meaning it was reinstalled), reset our UI flags!
-        if (!isTermuxInstalled || (savedTermuxSignature != 0 && currentTermuxInstallTime != savedTermuxSignature)) {
-            internalPrefs.edit()
-                    .putBoolean("termux_tapped_overlay", false)
-                    .putBoolean("termux_tapped_storage", false)
-                    .putLong("termux_install_signature", isTermuxInstalled ? currentTermuxInstallTime : 0)
-                    .apply();
-            invalidateModuleStateTrust();
-        } else if (isTermuxInstalled && savedTermuxSignature == 0) {
-            // First time tracking an existing installation
-            internalPrefs.edit().putLong("termux_install_signature", currentTermuxInstallTime).apply();
-        }
-
-        // 2. Calculate Termux missing permissions (Blue Badge)
-        int missingTermux = 0;
-
-        // We read the flags (they will automatically return false if they were just wiped by the logic above)
-        if (!internalPrefs.getBoolean("termux_tapped_overlay", false)) missingTermux++;
-        if (!internalPrefs.getBoolean("termux_tapped_storage", false)) missingTermux++;
-
-        if (badgeTermux != null) {
-            if (missingTermux > 0) {
-                badgeTermux.setVisibility(View.VISIBLE);
-                badgeTermux.setText(String.valueOf(missingTermux));
+    private void vibrateDevice() {
+        android.os.Vibrator v = (android.os.Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (v != null && v.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v.vibrate(android.os.VibrationEffect.createOneShot(50, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
             } else {
-                badgeTermux.setVisibility(View.GONE);
+                v.vibrate(50);
             }
         }
+    }
+    // WATCHDOG PROTECTION UTILS
+    public void enableSystemProtection() {
+        Intent intent = new Intent(this, WatchdogService.class);
+        intent.setAction(WatchdogService.ACTION_START);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(intent);
+        } else {
+            startService(intent);
+        }
+    }
+
+    public void disableSystemProtection() {
+        Intent intent = new Intent(this, WatchdogService.class);
+        intent.setAction(WatchdogService.ACTION_STOP);
+        startService(intent);
     }
 }

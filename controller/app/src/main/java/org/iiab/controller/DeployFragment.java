@@ -3,14 +3,22 @@
  * Name        : DeployFragment.java
  * Author      : IIAB Project
  * Copyright   : Copyright (c) 2026 IIAB Project
- * Description : Installation / deployment view
+ * Description : Installation / deployment view (Refactored with SAF & Regions)
  * ============================================================================
  */
 package org.iiab.controller;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
@@ -23,15 +31,14 @@ import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import android.content.BroadcastReceiver;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
-
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.RemoteInput;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
 
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
@@ -39,12 +46,6 @@ import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
 import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
-
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
-import androidx.fragment.app.Fragment;
-
 import com.google.android.material.snackbar.Snackbar;
 
 import org.json.JSONObject;
@@ -52,60 +53,82 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 
 public class DeployFragment extends Fragment {
 
-    // --- UI Variables ---
-    private View ledTermux;
-    private View ledDevMode;
-    private View ledDcpr;
-    private View ledPpk;
-    private TextView txtDcpr;
-    private TextView txtPpk;
-    private LinearLayout rolesContainer;
-    private LinearLayout discrepancyWarning;
-    private Button btnLaunchInstall;
-    private Button btnFastInstall;
-    private Button btnFastDelete;
-    private Button btnAdvancedReset;
-    private Button btnAdvancedBackup;
-    private Button btnAdvancedRestore;
-    private Button btnAdvancedForceStop;
+    // =========================================================================================
+    // REGION 1: VARIABLES & STATE
+    // =========================================================================================
+    private static final String TAG = "IIAB-DeployFragment";
 
-    // Restore backups menu
-    private TextView txtSelectBackupTitle;
+    // UI Variables
+    private View ledInternet, ledDevMode, ledDcpr, ledPpk;
+    private TextView txtDcpr, txtPpk, btnRefreshModules;
+    private LinearLayout rolesContainer, discrepancyWarning;
+    private Button btnLaunchInstall, btnFastInstall, btnFastDelete, btnAdvancedReset;
+    private Button btnAdvancedBackup, btnAdvancedRestore, btnAdvancedForceStop;
+
+    // Backup Menu UI
+    private TextView txtSelectBackupTitle, txtBackupStatus;
     private LinearLayout containerBackupList;
-    private TextView txtBackupStatus;
     private String selectedBackupFile = null;
 
-    // --- State Management ---
-    private final List<CheckBox> newInstallCheckboxes = new ArrayList<>();
-    private File sharedStateDir;
-    private JSONObject lastKnownState = new JSONObject();
-    private TextView btnRefreshModules;
-    private static final String TAG = "IIAB-DeployFragment";
-    private List<String> installationQueue = new ArrayList<>();
-    private boolean isBatchInstalling = false;
-    private final Handler liveStatusHandler = new Handler(Looper.getMainLooper());
-    private Runnable liveStatusRunnable;
-    // -- Advance monitoring --
+    // Advanced Monitoring UI
+    private TextView txtAdvMonitoringTitle;
+    private LinearLayout containerAdvMonitoring;
     private Button btnAdbAction;
     private View ledAdbStatus;
     private TextView txtAdbLedLabel;
     private com.github.mikephil.charting.charts.LineChart cpuChart;
 
-    private boolean isConnectedToAdb = false;
-    private boolean isScanning = false;
-    private boolean isAttemptingFastConnect = false;
+    // Planner UI
+    private Button btnTierBasic, btnTierStandard, btnTierFull;
+    private TextView txtLegendIiab, txtLegendMaps, txtLegendKiwix, txtLegendFree;
+    private CheckBox chkCompanionData;
+    private MultiResourceGaugeView storageGauge;
+    private android.widget.ImageButton btnKiwixSettings;
+
+    // SAF & Backup Controls
+    private Button btnImportBackup, btnExportBackup;
+    private boolean isBackupInProgress = false;
+    private ActivityResultLauncher<String[]> importBackupLauncher;
+    private ActivityResultLauncher<String> exportBackupLauncher;
+
+    // State Variables
+    private final List<CheckBox> newInstallCheckboxes = new ArrayList<>();
+    private File sharedStateDir;
+    private JSONObject lastKnownState = new JSONObject();
+    private List<String> installationQueue = new ArrayList<>();
+    private boolean isBatchInstalling = false;
+    private boolean isStorageSafe = false;
+    private String overrideKiwixLang = null;
+    private String overrideKiwixVariant = null;
+    private InstallationPlanner.Tier selectedTier = null;
+
+    // Native Engine Variables
+    private static Aria2Manager aria2Manager;
+    private static boolean isDownloadingRootfs = false;
+    private PRootEngine prootEngine;
+
+    // Background Handlers
+    private final Handler liveStatusHandler = new Handler(Looper.getMainLooper());
+    private Runnable liveStatusRunnable;
+
+    // ADB Variables
+    private boolean isConnectedToAdb = false, isScanning = false, isAttemptingFastConnect = false;
     private android.net.nsd.NsdManager nsdManager;
-    private int discoveredConnectPort = -1;
-    private int discoveredPairingPort = -1;
-    private android.net.nsd.NsdManager.DiscoveryListener connectDiscoveryListener;
-    private android.net.nsd.NsdManager.DiscoveryListener pairingDiscoveryListener;
+    private String discoveredHostIp = "127.0.0.1";
+    private int discoveredConnectPort = -1, discoveredPairingPort = -1;
+    private android.net.nsd.NsdManager.DiscoveryListener connectDiscoveryListener, pairingDiscoveryListener;
+    private android.net.wifi.WifiManager.MulticastLock multicastLock;
 
     private static final String CHANNEL_ID = "adb_pairing_channel";
     private static final String SERVICE_TYPE_CONNECT = "_adb-tls-connect._tcp.";
@@ -115,12 +138,29 @@ public class DeployFragment extends Fragment {
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            if ("org.iiab.controller.ADB_PAIRING_SENT".equals(action)) {
+
+            if ("org.iiab.controller.ADB_PAIRING_SUCCESSFUL".equals(action)) {
+                requireContext().getSharedPreferences("iiab_adb_prefs", Context.MODE_PRIVATE)
+                        .edit().putBoolean("pairing_just_succeeded", false).apply();
+
+                android.util.Log.i(TAG, "Broadcast received: Pairing successful! Re-scanning in 2.5s...");
+                if (isAdded()) {
+                    btnAdbAction.setText("Securing connection...");
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        startAdbPairingFlow();
+                    }, 2500);
+                }
+            } else if ("org.iiab.controller.ADB_PAIRING_FAILED".equals(action)) {
+                android.util.Log.w(TAG, "Broadcast received: Pairing failed.");
+                if (isAdded()) resetScanState();
+
+            } else if ("org.iiab.controller.ADB_PAIRING_SENT".equals(action)) {
                 btnAdbAction.setText("Connected!");
                 isConnectedToAdb = true;
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
                     if (isAdded()) updateUiState(true);
                 }, 500);
+
             } else if ("org.iiab.controller.ADB_CPU_UPDATE".equals(action)) {
                 String cpuData = intent.getStringExtra("cpu_line");
                 if (isAdded() && isConnectedToAdb && cpuData != null) {
@@ -135,60 +175,59 @@ public class DeployFragment extends Fragment {
                 String cpValue = intent.getStringExtra("child_process_value");
                 String rawPpkValue = intent.getStringExtra("ppk_value");
 
+                requireContext().getSharedPreferences("iiab_adb_prefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("child_process_value", cpValue)
+                        .putString("ppk_value", rawPpkValue)
+                        .apply();
+
                 String ppkDisplay = ("null".equals(rawPpkValue) || "unknown".equals(rawPpkValue)) ? getString(R.string.adb_ppk_default) : rawPpkValue;
 
-                // Reset tints and set base grey background
                 ledDcpr.setBackgroundTintList(null);
                 ledPpk.setBackgroundTintList(null);
                 ledPpk.setBackgroundResource(R.drawable.led_off);
                 ledDcpr.setBackgroundResource(R.drawable.led_off);
 
                 if (android.os.Build.VERSION.SDK_INT >= 34) {
-                    // ==========================================
-                    // --- ANDROID 14+ LOGIC ---
-                    // ==========================================
                     txtPpk.setText(android.text.Html.fromHtml(getString(R.string.adb_ppk_limit_not_required, ppkDisplay), android.text.Html.FROM_HTML_MODE_COMPACT));
-
-                    // PPK Color Logic (A14+)
                     if ("256".equals(rawPpkValue) || "512".equals(rawPpkValue) || "1024".equals(rawPpkValue)) {
-                        ledPpk.setBackgroundResource(R.drawable.led_on_green); // GREEN (Fixed manually)
+                        ledPpk.setBackgroundResource(R.drawable.led_on_green);
                     } else if ("error".equals(rawPpkValue) || rawPpkValue == null || rawPpkValue.isEmpty()) {
-                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#FFC107"))); // YELLOW (Timeout/Error)
+                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#FFC107")));
                     } else {
-                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#2196F3"))); // BLUE (Queried, default value, not critical here)
+                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#2196F3")));
                     }
 
-                    // Child Process Color Logic (A14+)
                     if ("0".equals(cpValue) || "false".equals(cpValue)) {
                         ledDcpr.setBackgroundResource(R.drawable.led_on_green);
                         txtDcpr.setText(android.text.Html.fromHtml(getString(R.string.adb_cp_disabled_ok), android.text.Html.FROM_HTML_MODE_COMPACT));
                     } else if ("1".equals(cpValue) || "true".equals(cpValue) || "null".equals(cpValue) || cpValue == null) {
-                        ledDcpr.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336"))); // RED (Limiting)
+                        ledDcpr.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336")));
                         txtDcpr.setText(android.text.Html.fromHtml(getString(R.string.adb_cp_enabled_limiting), android.text.Html.FROM_HTML_MODE_COMPACT));
                     } else {
                         txtDcpr.setText(android.text.Html.fromHtml(getString(R.string.adb_cp_unknown), android.text.Html.FROM_HTML_MODE_COMPACT));
                     }
 
                 } else if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    // ==========================================
-                    // --- ANDROID 12 & 13 LOGIC ---
-                    // ==========================================
                     txtDcpr.setText(android.text.Html.fromHtml(getString(R.string.adb_cp_not_required), android.text.Html.FROM_HTML_MODE_COMPACT));
-
                     txtPpk.setText(android.text.Html.fromHtml(getString(R.string.adb_ppk_limit_active, ppkDisplay), android.text.Html.FROM_HTML_MODE_COMPACT));
 
-                    // PPK Color Logic (A12/13)
                     if ("256".equals(rawPpkValue) || "512".equals(rawPpkValue) || "1024".equals(rawPpkValue)) {
-                        ledPpk.setBackgroundResource(R.drawable.led_on_green); // GREEN (Fixed manually)
+                        ledPpk.setBackgroundResource(R.drawable.led_on_green);
                     } else if ("error".equals(rawPpkValue) || rawPpkValue == null || rawPpkValue.isEmpty()) {
-                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336"))); // RED (Timeout/Error - Critical here)
+                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336")));
                     } else {
-                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#FFC107"))); // YELLOW (Queried, default value, needs attention)
+                        ledPpk.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#FFC107")));
                     }
                 }
             }
         }
     };
+
+
+    // =========================================================================================
+    // REGION 2: ANDROID LIFECYCLE
+    // =========================================================================================
 
     @Nullable
     @Override
@@ -200,79 +239,23 @@ public class DeployFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        // 1. SINGLE VIEW INITIALIZATION
-        ledTermux = view.findViewById(R.id.led_install_termux);
+        // UI Binding
+        ledInternet = view.findViewById(R.id.led_install_internet);
         ledDevMode = view.findViewById(R.id.led_install_dev_mode);
         ledDcpr = view.findViewById(R.id.led_install_dcpr);
         ledPpk = view.findViewById(R.id.led_install_ppk);
         txtDcpr = view.findViewById(R.id.txt_install_dcpr);
         txtPpk = view.findViewById(R.id.txt_install_ppk);
-
         btnAdbAction = view.findViewById(R.id.btn_adb_action);
         ledAdbStatus = view.findViewById(R.id.led_adb_status);
         txtAdbLedLabel = view.findViewById(R.id.txt_adb_led_label);
         cpuChart = view.findViewById(R.id.cpu_chart);
-        nsdManager = (android.net.nsd.NsdManager) requireContext().getSystemService(Context.NSD_SERVICE);
-
-        // 2. VERSION LOGIC (Hide on Android 10-)
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
-            view.findViewById(R.id.section_adv_monitoring).setVisibility(View.GONE);
-            view.findViewById(R.id.container_led_dcpr).setVisibility(View.GONE);
-            view.findViewById(R.id.container_led_ppk).setVisibility(View.GONE);
-        } else {
-            TextView txtAdvMonitoringTitle = view.findViewById(R.id.txt_adv_monitoring_title);
-            LinearLayout containerAdvMonitoring = view.findViewById(R.id.container_adv_monitoring);
-            setupSingleMenu(txtAdvMonitoringTitle, containerAdvMonitoring, R.string.install_adv_monitoring_title);
-        }
-
-        // 3. ASSIGN TEXT LISTENERS
-        LinearLayout containerDcpr = view.findViewById(R.id.container_led_dcpr);
-        containerDcpr.setOnClickListener(v -> {
-            if (isConnectedToAdb && android.os.Build.VERSION.SDK_INT >= 34) {
-                IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
-                adbManager.executeCommand("settings put global settings_enable_monitor_phantom_procs 0");
-                com.google.android.material.snackbar.Snackbar.make(v, R.string.adb_snack_disabling_cp, com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show();
-                new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
-            }
-        });
-
-        // Listener to set PPK to 256 (Android 12+)
-        LinearLayout containerPpk = view.findViewById(R.id.container_led_ppk);
-        containerPpk.setOnClickListener(v -> {
-            if (isConnectedToAdb && android.os.Build.VERSION.SDK_INT >= 31) {
-                IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
-                adbManager.executeCommand("device_config put activity_manager max_phantom_processes 256");
-                com.google.android.material.snackbar.Snackbar.make(v, R.string.adb_snack_setting_ppk, com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).show();
-                new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
-            }
-        });
-
-        // 4. INITIALIZE CHART AND ADB BUTTON
-        setupCpuChart();
-
-        btnAdbAction.setOnClickListener(v -> {
-            if (isConnectedToAdb) {
-                new Thread(() -> {
-                    try {
-                        IIABAdbManager.getInstance(requireContext()).disconnect();
-                    } catch (Exception ignored) {
-                    }
-                }).start();
-                isConnectedToAdb = false;
-                updateUiState(false);
-            } else if (!isScanning) {
-                startAdbPairingFlow();
-            }
-        });
-
+        btnKiwixSettings = view.findViewById(R.id.btn_kiwix_settings);
         rolesContainer = view.findViewById(R.id.install_roles_container);
         discrepancyWarning = view.findViewById(R.id.install_discrepancy_warning);
         btnLaunchInstall = view.findViewById(R.id.btn_launch_install);
-
-        // Link fast install / delete buttons
         btnFastInstall = view.findViewById(R.id.btn_fast_install);
         btnFastDelete = view.findViewById(R.id.btn_fast_delete);
-
         btnAdvancedReset = view.findViewById(R.id.btn_advanced_reset);
         btnAdvancedBackup = view.findViewById(R.id.btn_advanced_backup);
         btnAdvancedRestore = view.findViewById(R.id.btn_advanced_restore);
@@ -280,21 +263,45 @@ public class DeployFragment extends Fragment {
         txtSelectBackupTitle = view.findViewById(R.id.txt_select_backup_title);
         containerBackupList = view.findViewById(R.id.container_backup_list);
         txtBackupStatus = view.findViewById(R.id.txt_backup_status);
-
-        sharedStateDir = new File(Environment.getExternalStorageDirectory(), ".iiab_state");
         btnRefreshModules = view.findViewById(R.id.btn_refresh_modules);
-        // Initial Button State
-        btnLaunchInstall.setEnabled(false);
-        btnLaunchInstall.setAlpha(0.5f);
+        btnTierBasic = view.findViewById(R.id.btn_tier_basic);
+        btnTierStandard = view.findViewById(R.id.btn_tier_standard);
+        btnTierFull = view.findViewById(R.id.btn_tier_full);
+        chkCompanionData = view.findViewById(R.id.chk_companion_data);
+        storageGauge = view.findViewById(R.id.storage_projection_gauge);
+        txtLegendIiab = view.findViewById(R.id.txt_legend_iiab);
+        txtLegendMaps = view.findViewById(R.id.txt_legend_maps);
+        txtLegendKiwix = view.findViewById(R.id.txt_legend_kiwix);
+        txtLegendFree = view.findViewById(R.id.txt_legend_free);
 
+        // SAF Binding
+        btnImportBackup = view.findViewById(R.id.btn_import_backup);
+        btnExportBackup = view.findViewById(R.id.btn_export_backup);
+
+        nsdManager = (android.net.nsd.NsdManager) requireContext().getSystemService(Context.NSD_SERVICE);
+        sharedStateDir = new File(Environment.getExternalStorageDirectory(), ".iiab_state");
+
+        // Initialization Logic
+        setupSafLaunchers();
+        setupAdbNetworking();
+        setupAdvancedMonitoringMenu(view);
+        setupCpuChart();
+        setupAdbListeners();
+        setupPlannerListeners();
         setupAllCollapsibleMenus();
         createModulesGrid();
-        requestFreshLocalVarsSilently();
 
-        // Define the heartbeat (checks the server in the background)
+        // Initial States
+        btnLaunchInstall.setEnabled(false);
+        btnLaunchInstall.setAlpha(0.5f);
+        btnKiwixSettings.setColorFilter(Color.parseColor("#555555"));
+        btnFastInstall.setAlpha(0.4f);
+
+        // Handlers
         liveStatusRunnable = () -> {
             new Thread(() -> {
                 boolean isAlive = pingUrl("http://localhost:8085/home");
+                checkInternetAccess();
                 if (getActivity() instanceof MainActivity) {
                     ((MainActivity) getActivity()).isServerAlive = isAlive;
                 }
@@ -302,28 +309,19 @@ public class DeployFragment extends Fragment {
                     getActivity().runOnUiThread(this::updateDynamicButtons);
                 }
             }).start();
-            // Check every 3 seconds
             liveStatusHandler.postDelayed(liveStatusRunnable, 3000);
         };
+
+        requestFreshLocalVarsSilently();
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        // Hide warning initially
         if (discrepancyWarning != null) discrepancyWarning.setVisibility(View.GONE);
 
-        IntentFilter filter = new IntentFilter();
-        filter.addAction("org.iiab.controller.ADB_PAIRING_SENT");
-        filter.addAction("org.iiab.controller.ADB_CPU_UPDATE");
-        filter.addAction("org.iiab.controller.ADB_RESTRICTIONS_UPDATE");
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            requireContext().registerReceiver(adbUiUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            requireContext().registerReceiver(adbUiUpdateReceiver, filter);
-        }
-
-        // Restore the memory queue
+        registerAdbReceiver();
+        checkAndHandleSyncFragmentFocus();
         restoreQueueFromPrefs();
 
         if (isBatchInstalling) {
@@ -333,24 +331,9 @@ public class DeployFragment extends Fragment {
         if (lastKnownState.length() > 0) {
             verifyInstallationState(lastKnownState);
         } else {
-
-            File jsonFile = new File(sharedStateDir, "local_vars.json");
-            if (jsonFile.exists() && jsonFile.length() > 0) {
-                try {
-                    StringBuilder text = new StringBuilder();
-                    BufferedReader br = new BufferedReader(new FileReader(jsonFile));
-                    String line;
-                    while ((line = br.readLine()) != null) {
-                        text.append(line);
-                    }
-                    br.close();
-                    lastKnownState = new JSONObject(text.toString());
-                    verifyInstallationState(lastKnownState);
-                } catch (Exception e) {
-                    android.util.Log.e(TAG, "Failed to read existing JSON in onResume", e);
-                }
-            }
+            loadLocalVarsFallback();
         }
+
         updateDynamicButtons();
         liveStatusHandler.post(liveStatusRunnable);
     }
@@ -358,21 +341,31 @@ public class DeployFragment extends Fragment {
     @Override
     public void onPause() {
         super.onPause();
-        try {
-            requireContext().unregisterReceiver(adbUiUpdateReceiver);
-        } catch (Exception ignored) {
-        }
+        try { requireContext().unregisterReceiver(adbUiUpdateReceiver); } catch (Exception ignored) {}
         liveStatusHandler.removeCallbacks(liveStatusRunnable);
     }
 
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (getActivity() != null && getActivity().isChangingConfigurations()) return;
+        if (aria2Manager != null && isDownloadingRootfs) {
+            aria2Manager.stopDownload();
+            isDownloadingRootfs = false;
+        }
+    }
+
+
+    // =========================================================================================
+    // REGION 3: UI & MENU CONTROLLERS
+    // =========================================================================================
+
     private void setupAllCollapsibleMenus() {
         if (getView() == null) return;
-        // 2. Modules
         TextView txtModuleMgmtTitle = getView().findViewById(R.id.txt_module_mgmt_title);
         LinearLayout containerModuleMgmt = getView().findViewById(R.id.container_module_mgmt);
         setupSingleMenu(txtModuleMgmtTitle, containerModuleMgmt, R.string.install_header_roles);
 
-        // 3. Maintenance
         TextView txtMaintenanceTitle = getView().findViewById(R.id.txt_maintenance_title);
         LinearLayout containerMaintenance = getView().findViewById(R.id.container_maintenance);
         setupSingleMenu(txtMaintenanceTitle, containerMaintenance, R.string.install_header_maintenance);
@@ -380,23 +373,54 @@ public class DeployFragment extends Fragment {
 
     private void setupSingleMenu(TextView titleView, View container, int stringRes) {
         if (titleView == null || container == null) return;
-
         container.setVisibility(View.GONE);
-
         String baseText = getString(stringRes);
-
         titleView.setText(getString(R.string.label_separator_up, baseText));
-
         titleView.setOnClickListener(v -> {
             boolean isCollapsed = container.getVisibility() == View.GONE;
             container.setVisibility(isCollapsed ? View.VISIBLE : View.GONE);
-
-            if (isCollapsed) {
-                titleView.setText(getString(R.string.label_separator_down, baseText));
-            } else {
-                titleView.setText(getString(R.string.label_separator_up, baseText));
-            }
+            titleView.setText(getString(isCollapsed ? R.string.label_separator_down : R.string.label_separator_up, baseText));
         });
+    }
+
+    private void setupAdvancedMonitoringMenu(View view) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            view.findViewById(R.id.section_adv_monitoring).setVisibility(View.GONE);
+            View adbLedsContainer = view.findViewById(R.id.container_adb_leds);
+            if (adbLedsContainer != null) adbLedsContainer.setVisibility(View.GONE);
+        } else {
+            txtAdvMonitoringTitle = view.findViewById(R.id.txt_adv_monitoring_title);
+            containerAdvMonitoring = view.findViewById(R.id.container_adv_monitoring);
+            setupSingleMenu(txtAdvMonitoringTitle, containerAdvMonitoring, R.string.install_adv_monitoring_title);
+        }
+    }
+
+    private void focusAdvancedMonitoring() {
+        if (containerAdvMonitoring != null && txtAdvMonitoringTitle != null) {
+            if (containerAdvMonitoring.getVisibility() == View.GONE) txtAdvMonitoringTitle.performClick();
+            android.animation.ArgbEvaluator evaluator = new android.animation.ArgbEvaluator();
+            android.animation.ObjectAnimator animator = android.animation.ObjectAnimator.ofObject(
+                    txtAdvMonitoringTitle, "textColor", evaluator,
+                    Color.RED, ContextCompat.getColor(requireContext(), R.color.dash_text_primary)
+            );
+            animator.setDuration(400);
+            animator.setRepeatCount(5);
+            animator.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+            animator.start();
+        }
+    }
+
+    private void checkAndHandleSyncFragmentFocus() {
+        android.content.SharedPreferences adbPrefs = requireContext().getSharedPreferences("iiab_adb_prefs", Context.MODE_PRIVATE);
+        if (adbPrefs.getBoolean("pairing_just_succeeded", false)) {
+            adbPrefs.edit().putBoolean("pairing_just_succeeded", false).apply();
+            btnAdbAction.setText("Securing connection...");
+            new Handler(Looper.getMainLooper()).postDelayed(() -> startAdbPairingFlow(true), 2500);
+        }
+        if (adbPrefs.getBoolean("focus_adb", false)) {
+            adbPrefs.edit().putBoolean("focus_adb", false).apply();
+            new Handler(Looper.getMainLooper()).postDelayed(this::focusAdvancedMonitoring, 600);
+        }
     }
 
     private void createModulesGrid() {
@@ -420,24 +444,20 @@ public class DeployFragment extends Fragment {
 
         int numCols = 3;
         int numRows = (int) Math.ceil((double) activeModules.size() / numCols);
-
         int ledSizePx = (int) (12 * getResources().getDisplayMetrics().density);
 
         for (int row = 0; row < numRows; row++) {
             LinearLayout rowLayout = new LinearLayout(requireContext());
             rowLayout.setOrientation(LinearLayout.HORIZONTAL);
-            rowLayout.setLayoutParams(new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            rowLayout.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             rowLayout.setBaselineAligned(false);
             rowLayout.setWeightSum(numCols);
             rowLayout.setPadding(0, 0, 0, 16);
 
             for (int col = 0; col < numCols; col++) {
                 int index = (row * numCols) + col;
-
                 LinearLayout cell = new LinearLayout(requireContext());
-                LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(
-                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                LinearLayout.LayoutParams cellParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
 
                 int margin = 10;
                 if (col == 0) cellParams.setMargins(0, 0, margin, 0);
@@ -451,8 +471,7 @@ public class DeployFragment extends Fragment {
 
                     cell.setOrientation(LinearLayout.HORIZONTAL);
                     cell.setBackgroundResource(R.drawable.rounded_button);
-                    cell.setBackgroundTintList(ColorStateList.valueOf(
-                            ContextCompat.getColor(requireContext(), R.color.dash_module_bg)));
+                    cell.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.dash_module_bg)));
                     cell.setPadding(16, 28, 16, 28);
                     cell.setGravity(android.view.Gravity.CENTER);
 
@@ -462,8 +481,7 @@ public class DeployFragment extends Fragment {
                     indicatorContainer.setLayoutParams(indParams);
 
                     View led = new View(requireContext());
-                    android.widget.FrameLayout.LayoutParams ledParams = new android.widget.FrameLayout.LayoutParams(
-                            ledSizePx, ledSizePx, android.view.Gravity.CENTER);
+                    android.widget.FrameLayout.LayoutParams ledParams = new android.widget.FrameLayout.LayoutParams(ledSizePx, ledSizePx, android.view.Gravity.CENTER);
                     led.setLayoutParams(ledParams);
                     led.setBackgroundResource(R.drawable.led_off);
 
@@ -471,8 +489,7 @@ public class DeployFragment extends Fragment {
                     checkBox.setScaleX(0.85f);
                     checkBox.setScaleY(0.85f);
                     checkBox.setPadding(0, 0, 0, 0);
-                    android.widget.FrameLayout.LayoutParams cbParams = new android.widget.FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER);
+                    android.widget.FrameLayout.LayoutParams cbParams = new android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.CENTER);
                     checkBox.setLayoutParams(cbParams);
                     checkBox.setVisibility(View.GONE);
 
@@ -492,114 +509,773 @@ public class DeployFragment extends Fragment {
                     name.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_primary));
                     name.setTextSize(12f);
                     name.setSingleLine(true);
-
-                    LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                     textParams.setMargins(16, 0, 0, 0);
                     name.setLayoutParams(textParams);
 
                     cell.addView(indicatorContainer);
                     cell.addView(name);
-
                     cell.setTag(currentMod);
                 } else {
                     cell.setVisibility(View.INVISIBLE);
                 }
-
                 rowLayout.addView(cell);
             }
             rolesContainer.addView(rowLayout);
         }
     }
 
-    // --- LOGIC: REQUEST FRESH JSON ---
-    private void requestFreshLocalVars() {
-        File jsonFile = new File(sharedStateDir, "local_vars.json");
+    private void updateDynamicButtons() {
+        MainActivity mainAct = (MainActivity) getActivity();
+        if (mainAct == null || !isAdded()) return;
 
-        if (jsonFile.exists() && jsonFile.length() > 0) {
-            try {
-                StringBuilder text = new StringBuilder();
-                BufferedReader br = new BufferedReader(new FileReader(jsonFile));
-                String line;
-                while ((line = br.readLine()) != null) {
-                    text.append(line);
+        boolean isServerRunning = mainAct.isServerAlive;
+        final File iiabRootDir = new File(requireContext().getFilesDir(), "rootfs");
+        final File debianRootfs = new File(iiabRootDir, "installed-rootfs/iiab");
+        final File backupsDir = new File(iiabRootDir, "backups");
+        if (!backupsDir.exists()) backupsDir.mkdirs();
+
+        boolean isProotInstalled = new File(debianRootfs, "etc/os-release").exists() || new File(debianRootfs, "usr/bin/bash").exists();
+        refreshDashboardLeds(mainAct);
+
+        // Animated Banner
+        View bannerWarning = getView().findViewById(R.id.banner_server_warning);
+        if (bannerWarning != null) {
+            boolean isBannerVisible = bannerWarning.getVisibility() == View.VISIBLE;
+            if (isServerRunning && !isBannerVisible) {
+                android.transition.TransitionManager.beginDelayedTransition((ViewGroup) getView(), new android.transition.AutoTransition().setDuration(300));
+                bannerWarning.setVisibility(View.VISIBLE);
+            } else if (!isServerRunning && isBannerVisible) {
+                android.transition.TransitionManager.beginDelayedTransition((ViewGroup) getView(), new android.transition.AutoTransition().setDuration(300));
+                bannerWarning.setVisibility(View.GONE);
+            }
+        }
+
+        // Refresh Button
+        if (btnRefreshModules != null) {
+            btnRefreshModules.setEnabled(true);
+            if (isServerRunning || !isProotInstalled) {
+                btnRefreshModules.setTextColor(Color.parseColor("#9E9E9E"));
+                btnRefreshModules.setAlpha(0.6f);
+                btnRefreshModules.setOnClickListener(v -> {
+                    if (!isProotInstalled) Snackbar.make(v, R.string.install_msg_termux_missing, Snackbar.LENGTH_LONG).show();
+                    else if (isServerRunning) Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
+                });
+            } else {
+                btnRefreshModules.setTextColor(Color.parseColor("#2196F3"));
+                btnRefreshModules.setAlpha(1.0f);
+                btnRefreshModules.setOnClickListener(v -> {
+                    v.setAlpha(0.5f);
+                    requestFreshLocalVars();
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> v.setAlpha(1.0f), 1000);
+                });
+            }
+        }
+
+        // Basic Enablers
+        btnFastInstall.setEnabled(true);
+        btnFastDelete.setEnabled(true);
+        if (btnAdvancedReset != null) btnAdvancedReset.setEnabled(true);
+        if (btnAdvancedBackup != null) btnAdvancedBackup.setEnabled(true);
+        if (btnAdvancedRestore != null) btnAdvancedRestore.setEnabled(true);
+        if (txtSelectBackupTitle != null) txtSelectBackupTitle.setEnabled(true);
+
+        if (btnAdvancedForceStop != null) {
+            btnAdvancedForceStop.setEnabled(true);
+            btnAdvancedForceStop.setAlpha(1.0f);
+            btnAdvancedForceStop.setOnClickListener(v -> openTermuxAppInfo());
+        }
+
+        if (isServerRunning) {
+            // CASE A: Server Running (Lock UI)
+            float lockAlpha = 0.5f;
+            btnFastInstall.setAlpha(lockAlpha);
+            btnFastDelete.setAlpha(lockAlpha);
+            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(lockAlpha);
+            if (btnAdvancedRestore != null) btnAdvancedRestore.setAlpha(lockAlpha);
+            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(lockAlpha);
+            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(lockAlpha);
+
+            btnFastInstall.setText(R.string.install_btn_reinstall);
+            View.OnClickListener serverHot = v -> Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
+            btnFastInstall.setOnClickListener(serverHot);
+            btnFastDelete.setOnClickListener(serverHot);
+            if (btnAdvancedBackup != null) btnAdvancedBackup.setOnClickListener(serverHot);
+            if (btnAdvancedRestore != null) btnAdvancedRestore.setOnClickListener(serverHot);
+            if (btnAdvancedReset != null) btnAdvancedReset.setOnClickListener(serverHot);
+            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setOnClickListener(serverHot);
+
+        } else {
+            // CASE B: Server Offline (Enable UI)
+            if (selectedTier == null || !isStorageSafe) btnFastInstall.setAlpha(0.4f);
+            else btnFastInstall.setAlpha(1.0f);
+
+            btnFastDelete.setAlpha(1.0f);
+            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(1.0f);
+            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(1.0f);
+            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(1.0f);
+            refreshRestoreButtonLogic();
+
+            if (!isDownloadingRootfs) {
+                btnFastInstall.setEnabled(true);
+                btnFastInstall.setTextSize(14f);
+                if (isProotInstalled) btnFastInstall.setText(R.string.install_btn_reinstall);
+                else btnFastInstall.setText(R.string.install_btn_install);
+            } else {
+                btnFastInstall.setEnabled(true);
+                btnFastInstall.setTextSize(12f);
+                btnFastInstall.setAlpha(0.8f);
+            }
+
+            // Bind native buttons
+            bindInstallButtonLogic(mainAct, debianRootfs, iiabRootDir);
+            bindDeleteButtonLogic(mainAct, debianRootfs);
+            bindBackupButtonLogic(mainAct, backupsDir, iiabRootDir);
+            bindResetButtonLogic(mainAct, debianRootfs);
+            bindBackupMenuLogic(backupsDir);
+        }
+    }
+
+
+    // =========================================================================================
+    // REGION 4: INSTALLATION PLANNER
+    // =========================================================================================
+
+    private void setupPlannerListeners() {
+        btnTierBasic.setAlpha(0.5f); btnTierBasic.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#008000")));
+        btnTierStandard.setAlpha(0.5f); btnTierStandard.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#333333")));
+        btnTierFull.setAlpha(0.5f); btnTierFull.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#333333")));
+
+        View.OnClickListener tierClickListener = v -> {
+            btnTierBasic.setAlpha(1.0f); btnTierStandard.setAlpha(1.0f); btnTierFull.setAlpha(1.0f);
+            btnTierBasic.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#333333")));
+            btnTierStandard.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#333333")));
+            btnTierFull.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#333333")));
+            v.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#008000")));
+
+            if (v.getId() == R.id.btn_tier_basic) selectedTier = InstallationPlanner.Tier.BASIC;
+            else if (v.getId() == R.id.btn_tier_standard) selectedTier = InstallationPlanner.Tier.STANDARD;
+            else if (v.getId() == R.id.btn_tier_full) selectedTier = InstallationPlanner.Tier.FULL;
+
+            overrideKiwixVariant = null;
+            recalculateProjection();
+        };
+
+        btnTierBasic.setOnClickListener(tierClickListener);
+        btnTierStandard.setOnClickListener(tierClickListener);
+        btnTierFull.setOnClickListener(tierClickListener);
+
+        chkCompanionData.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            btnKiwixSettings.setColorFilter(ContextCompat.getColor(requireContext(), isChecked ? R.color.colorAccent : R.color.dash_text_secondary));
+            recalculateProjection();
+        });
+
+        btnKiwixSettings.setOnClickListener(v -> showKiwixSettingsDialog());
+        recalculateProjection();
+    }
+
+    private void recalculateProjection() {
+        android.content.SharedPreferences prefs = requireContext().getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE);
+        String targetLang = (overrideKiwixLang != null) ? overrideKiwixLang : prefs.getString("selected_lang_minimal", "en");
+        InstallationPlanner.Tier evalTier = (selectedTier != null) ? selectedTier : InstallationPlanner.Tier.BASIC;
+
+        InstallationPlanner.calculateProjectedSize(requireContext(), evalTier, chkCompanionData.isChecked(), targetLang, overrideKiwixVariant, new InstallationPlanner.PlanResultListener() {
+            @Override
+            public void onCalculated(InstallationPlanner.StorageProjection projection) {
+                if (!isAdded()) return;
+
+                File path = android.os.Environment.getDataDirectory();
+                double freeSpaceGb = path.getFreeSpace() / (1024.0 * 1024.0 * 1024.0);
+                double totalSpaceGb = path.getTotalSpace() / (1024.0 * 1024.0 * 1024.0);
+                double usedSpaceGb = totalSpaceGb - freeSpaceGb;
+
+                double pOs = (selectedTier == null) ? 0.0 : projection.osSize;
+                double pMaps = (selectedTier == null) ? 0.0 : projection.mapsSize;
+                double pKiwix = (selectedTier == null) ? 0.0 : projection.kiwixSize;
+                double pTotal = pOs + pMaps + pKiwix;
+
+                isStorageSafe = pTotal <= (freeSpaceGb - 5.0);
+
+                if (txtLegendIiab != null) txtLegendIiab.setText(String.format(java.util.Locale.US, "%.1fG", pOs));
+                if (txtLegendMaps != null) txtLegendMaps.setText(String.format(java.util.Locale.US, "%.1fG", pMaps));
+                if (txtLegendKiwix != null) txtLegendKiwix.setText(String.format(java.util.Locale.US, "%.1fG", pKiwix));
+
+                TextView lblWiki = getView().findViewById(R.id.txt_legend_kiwix).getRootView().findViewWithTag("label_kiwix");
+                if (lblWiki == null && txtLegendKiwix != null) {
+                    ViewGroup parent = (ViewGroup) txtLegendKiwix.getParent();
+                    lblWiki = (TextView) parent.getChildAt(1);
                 }
-                br.close();
-                lastKnownState = new JSONObject(text.toString());
-            } catch (Exception e) {
-                android.util.Log.e(TAG, "Failed to cache old JSON", e);
+                if (lblWiki != null) {
+                    if (chkCompanionData.isChecked()) {
+                        lblWiki.setText("Wikipedia (" + projection.resolvedLang.toUpperCase() + ")");
+                        lblWiki.setTextColor(Color.parseColor("#2196F3"));
+                    } else {
+                        lblWiki.setText("Wikipedia");
+                        lblWiki.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_secondary));
+                    }
+                }
+
+                if (txtLegendFree != null) {
+                    if (isStorageSafe) {
+                        txtLegendFree.setText(String.format(java.util.Locale.US, "%.1fG", (freeSpaceGb - pTotal)));
+                        txtLegendFree.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_inverted));
+                    } else {
+                        txtLegendFree.setText("OVERLOAD");
+                        txtLegendFree.setTextColor(Color.parseColor("#F44336"));
+                    }
+                }
+
+                if (storageGauge != null) {
+                    List<MultiResourceGaugeView.Segment> segments = new ArrayList<>();
+                    float otherUsedPct = (totalSpaceGb > 0) ? (float) (usedSpaceGb / totalSpaceGb) * 100f : 0f;
+                    float osPct = (totalSpaceGb > 0) ? (float) (pOs / totalSpaceGb) * 100f : 0f;
+                    float mapsPct = (totalSpaceGb > 0) ? (float) (pMaps / totalSpaceGb) * 100f : 0f;
+                    float kiwixPct = (totalSpaceGb > 0) ? (float) (pKiwix / totalSpaceGb) * 100f : 0f;
+                    float totalDrawn = 0f;
+
+                    if (otherUsedPct > 0) {
+                        float draw = Math.min(otherUsedPct, 100f - totalDrawn);
+                        segments.add(new MultiResourceGaugeView.Segment(draw, Color.WHITE));
+                        totalDrawn += draw;
+                    }
+                    if (osPct > 0 && totalDrawn < 100f) {
+                        float draw = Math.min(osPct, 100f - totalDrawn);
+                        segments.add(new MultiResourceGaugeView.Segment(draw, Color.parseColor("#00FFFF")));
+                        totalDrawn += draw;
+                    }
+                    if (mapsPct > 0 && totalDrawn < 100f) {
+                        float draw = Math.min(mapsPct, 100f - totalDrawn);
+                        segments.add(new MultiResourceGaugeView.Segment(draw, Color.parseColor("#FF9800")));
+                        totalDrawn += draw;
+                    }
+                    if (kiwixPct > 0 && totalDrawn < 100f) {
+                        float draw = Math.min(kiwixPct, 100f - totalDrawn);
+                        segments.add(new MultiResourceGaugeView.Segment(draw, Color.parseColor("#008000")));
+                    }
+
+                    int centerColor = (selectedTier == null || isStorageSafe) ? ContextCompat.getColor(requireContext(), R.color.dash_text_inverted) : Color.parseColor("#F44336");
+                    storageGauge.updateData(segments, String.format(java.util.Locale.US, "%.1fG", pTotal), centerColor, "Projected", "Storage");
+                }
+
+                if (getActivity() != null) getActivity().runOnUiThread(() -> updateDynamicButtons());
             }
-        }
 
-        if (jsonFile.exists()) {
-            jsonFile.delete();
-        }
-
-        if (getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).executeTermuxCommandHeadless("--json-vars");
-        }
-
-        pollForJsonFile(jsonFile, 10, 1000); // 10 attempts, 1000ms each = 10 seconds
+            @Override
+            public void onError(String error) {
+                if (isAdded() && txtLegendFree != null) txtLegendFree.setText("Error");
+            }
+        });
     }
 
-    private void requestFreshLocalVarsSilently() {
-        File jsonFile = new File(sharedStateDir, "local_vars.json");
-        if (jsonFile.exists() && jsonFile.length() > 0) {
-            try {
-                StringBuilder text = new StringBuilder();
-                BufferedReader br = new BufferedReader(new FileReader(jsonFile));
-                String line;
-                while ((line = br.readLine()) != null) text.append(line);
-                br.close();
-                lastKnownState = new JSONObject(text.toString());
-                verifyInstallationState(lastKnownState);
-            } catch (Exception e) {
-                android.util.Log.e(TAG, "Failed to read existing JSON silently", e);
+    private void showKiwixSettingsDialog() {
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(requireContext()).create();
+        View view = getLayoutInflater().inflate(R.layout.dialog_install_planner_settings, null);
+        dialog.setView(view);
+
+        android.widget.Spinner spinnerLang = view.findViewById(R.id.spinner_kiwix_lang);
+        Button btnWipe = view.findViewById(R.id.btn_wipe_cache);
+        Button btnSelect = view.findViewById(R.id.btn_select_variant);
+        android.widget.RadioGroup rgVariants = view.findViewById(R.id.rg_kiwix_variants);
+
+        btnWipe.setOnClickListener(v -> {
+            InstallationPlanner.wipeCache(requireContext());
+            rgVariants.removeAllViews();
+            spinnerLang.setAdapter(null);
+            overrideKiwixVariant = null;
+            Snackbar.make(getView(), "Kiwix Cache wiped successfully", Snackbar.LENGTH_SHORT).show();
+        });
+
+        InstallationPlanner.getOrFetchCatalog(requireContext(), new InstallationPlanner.CacheListener() {
+            @Override
+            public void onReady(JSONObject catalog) {
+                if (!isAdded()) return;
+
+                List<String> langKeys = new ArrayList<>();
+                java.util.Iterator<String> keys = catalog.keys();
+                while (keys.hasNext()) langKeys.add(keys.next());
+                java.util.Collections.sort(langKeys);
+
+                List<String> displayNames = new ArrayList<>();
+                int selectedIndex = 0;
+                android.content.SharedPreferences prefs = requireContext().getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE);
+                String currentTarget = (overrideKiwixLang != null) ? overrideKiwixLang : prefs.getString("selected_lang_minimal", "en");
+
+                for (int i = 0; i < langKeys.size(); i++) {
+                    String code = langKeys.get(i);
+                    java.util.Locale loc = new java.util.Locale(code);
+                    String name = loc.getDisplayLanguage(loc);
+                    displayNames.add(name.substring(0, 1).toUpperCase() + name.substring(1) + " / " + loc.getDisplayLanguage(java.util.Locale.US));
+                    if (code.equals(currentTarget)) selectedIndex = i;
+                }
+
+                android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(requireContext(), android.R.layout.simple_spinner_dropdown_item, displayNames);
+                spinnerLang.setAdapter(adapter);
+                spinnerLang.setSelection(selectedIndex);
+
+                spinnerLang.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(android.widget.AdapterView<?> parent, View v, int position, long id) {
+                        String selectedCode = langKeys.get(position);
+                        rgVariants.removeAllViews();
+
+                        JSONObject variants = catalog.optJSONObject(selectedCode);
+                        if (variants != null) {
+                            java.util.Iterator<String> vKeys = variants.keys();
+                            while (vKeys.hasNext()) {
+                                String vk = vKeys.next();
+                                JSONObject vData = variants.optJSONObject(vk);
+                                double size = (vData != null) ? vData.optDouble("size", 0.0) : 0.0;
+
+                                android.widget.RadioButton rb = new android.widget.RadioButton(requireContext());
+                                rb.setId(View.generateViewId());
+                                rb.setText(String.format(java.util.Locale.US, "%-22s %5.1f GB", vk, size));
+                                rb.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_primary));
+                                rb.setTypeface(Typeface.MONOSPACE);
+                                rb.setTag(vk);
+                                rgVariants.addView(rb);
+
+                                if (vk.equals(overrideKiwixVariant)) rb.setChecked(true);
+                            }
+                        }
+                    }
+                    @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+                });
+
+                btnSelect.setOnClickListener(v -> {
+                    int checkedId = rgVariants.getCheckedRadioButtonId();
+                    if (checkedId != -1) {
+                        android.widget.RadioButton rb = rgVariants.findViewById(checkedId);
+                        overrideKiwixVariant = (String) rb.getTag();
+                        overrideKiwixLang = langKeys.get(spinnerLang.getSelectedItemPosition());
+                        recalculateProjection();
+                        dialog.dismiss();
+                    } else {
+                        Snackbar.make(getView(), "Please select a ZIM variant from the list", Snackbar.LENGTH_SHORT).show();
+                    }
+                });
             }
+            @Override
+            public void onError(String error) {
+                if (isAdded()) Snackbar.make(getView(), "Error loading catalog: " + error, Snackbar.LENGTH_LONG).show();
+            }
+        });
+        dialog.show();
+    }
+
+
+    // =========================================================================================
+    // REGION 5: NATIVE PIPELINES
+    // =========================================================================================
+
+    private void bindInstallButtonLogic(MainActivity mainAct, File debianRootfs, File iiabRootDir) {
+        btnFastInstall.setOnClickListener(v -> {
+            if (selectedTier == null) {
+                Snackbar.make(v, "Hey! Select an edition to install (Basic, Standard, or Full).", Snackbar.LENGTH_LONG).show();
+                return;
+            }
+            if (!isStorageSafe) {
+                Snackbar.make(v, "Not enough storage! Please free up space or choose a smaller edition. (5GB safety buffer required)", Snackbar.LENGTH_LONG).show();
+                return;
+            }
+            if (isDownloadingRootfs) {
+                new android.app.AlertDialog.Builder(requireContext())
+                        .setTitle(getString(R.string.install_btn_cancel_title))
+                        .setMessage(getString(R.string.install_btn_cancel_msg))
+                        .setPositiveButton(getString(R.string.install_btn_cancel_confirm), (dialog, which) -> {
+                            if (aria2Manager != null) aria2Manager.stopDownload();
+                            disableSystemProtection();
+                            isDownloadingRootfs = false;
+                            btnFastInstall.setText(R.string.install_btn_install);
+                            btnFastInstall.setAlpha(1.0f);
+                            Snackbar.make(getView(), R.string.install_msg_cancelled, Snackbar.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton(getString(R.string.cancel), null)
+                        .show();
+                return;
+            }
+
+            Runnable executeDownload = () -> {
+                enableSystemProtection();
+                mainAct.invalidateModuleStateTrust();
+                isDownloadingRootfs = true;
+                btnFastInstall.setAlpha(0.8f);
+                btnFastInstall.setTextSize(12f);
+
+                if (aria2Manager == null) aria2Manager = new Aria2Manager();
+
+                String arch = getTermuxArch();
+                String archSuffix = (arch.contains("arm") && !arch.contains("64")) ? "armeabi-v7a" : "arm64-v8a";
+                InstallationPlanner.Tier safeTier = (selectedTier != null) ? selectedTier : InstallationPlanner.Tier.BASIC;
+                String tierString = safeTier.name().toLowerCase(java.util.Locale.US);
+                String directUrl = "https://iiab.switnet.org/android/rootfs/latest_" + tierString + "_" + archSuffix + ".meta4";
+
+                aria2Manager.startDownload(requireContext(), directUrl, new Aria2Manager.DownloadListener() {
+                    @Override
+                    public void onProgress(int percentage, String speed, String eta) {
+                        if (isAdded() && getActivity() != null) {
+                            getActivity().runOnUiThread(() -> btnFastInstall.setText("OS: " + percentage + "% | " + speed + "/s"));
+                        }
+                    }
+                    @Override
+                    public void onComplete(String downloadPath) {
+                        if (!isAdded() || getActivity() == null) return;
+                        mainAct.runOnUiThread(() -> btnFastInstall.setText("Extracting System... \n(This takes a while)"));
+
+                        File downloadDir = new File(downloadPath);
+                        File[] archives = downloadDir.listFiles((dir, name) -> name.endsWith(".tar.xz") || name.endsWith(".tar.gz"));
+
+                        if (archives == null || archives.length == 0) {
+                            abortInstallation("Error: Downloaded archive not found.");
+                            return;
+                        }
+
+                        File downloadedArchive = archives[0];
+                        TarExtractor tarExtractor = new TarExtractor();
+
+                        tarExtractor.startExtraction(requireContext(), downloadedArchive.getAbsolutePath(), iiabRootDir.getAbsolutePath(), new TarExtractor.ExtractionListener() {
+                            @Override
+                            public void onComplete(String destDir) {
+                                downloadedArchive.delete();
+                                File prootTmp = new File(requireContext().getCacheDir(), "proot_tmp");
+                                if (!prootTmp.exists()) prootTmp.mkdirs();
+                                File binDir = new File(requireContext().getFilesDir(), "usr/bin");
+                                if (binDir.exists()) {
+                                    try { Runtime.getRuntime().exec(new String[]{"chmod", "-R", "755", binDir.getAbsolutePath()}).waitFor(); } catch (Exception ignored) {}
+                                }
+
+                                if (chkCompanionData.isChecked()) {
+                                    editLocalVarsForMaps(debianRootfs, safeTier);
+                                    android.content.SharedPreferences prefs = requireContext().getSharedPreferences(getString(R.string.pref_file_internal), Context.MODE_PRIVATE);
+                                    String targetLang = (overrideKiwixLang != null) ? overrideKiwixLang : prefs.getString("selected_lang_minimal", "en");
+
+                                    InstallationPlanner.calculateProjectedSize(requireContext(), safeTier, true, targetLang, overrideKiwixVariant, new InstallationPlanner.PlanResultListener() {
+                                        @Override
+                                        public void onCalculated(InstallationPlanner.StorageProjection projection) {
+                                            if (projection.resolvedFilename != null) downloadAndIndexKiwix(projection.resolvedFilename, debianRootfs);
+                                            else runMapsAnsible(debianRootfs);
+                                        }
+                                        @Override public void onError(String error) { runMapsAnsible(debianRootfs); }
+                                    });
+                                } else {
+                                    finishInstallationSuccess();
+                                }
+                            }
+                            @Override public void onError(String error) { abortInstallation("Extraction Failed: " + error); }
+                        });
+                    }
+                    @Override public void onError(String error) { abortInstallation("Download Failed: " + error); }
+                });
+            };
+
+            if (debianRootfs.exists() && debianRootfs.isDirectory()) {
+                new android.app.AlertDialog.Builder(requireContext())
+                        .setTitle(R.string.install_btn_reinstall)
+                        .setMessage("This will wipe the current Debian system and download a fresh copy. Continue?")
+                        .setPositiveButton("Yes", (dialog, which) -> {
+                            btnFastInstall.setText("Wiping old system...");
+                            btnFastInstall.setEnabled(false);
+                            new Thread(() -> {
+                                try { Runtime.getRuntime().exec(new String[]{"rm", "-rf", debianRootfs.getAbsolutePath()}).waitFor(); } catch (Exception ignored) {}
+                                mainAct.runOnUiThread(executeDownload);
+                            }).start();
+                        })
+                        .setNegativeButton("No", null)
+                        .show();
+            } else {
+                executeDownload.run();
+            }
+        });
+    }
+
+    private void bindDeleteButtonLogic(MainActivity mainAct, File debianRootfs) {
+        btnFastDelete.setOnClickListener(v -> {
+            new android.app.AlertDialog.Builder(requireContext())
+                    .setTitle("Delete System?")
+                    .setMessage("This will completely erase the IIAB system, databases, and all downloaded content. This action cannot be undone.")
+                    .setPositiveButton("DELETE EVERYTHING", (dialog, which) -> {
+                        mainAct.invalidateModuleStateTrust();
+                        btnFastDelete.setEnabled(false);
+                        Snackbar.make(getView(), "Starting native deletion...", Snackbar.LENGTH_SHORT).show();
+                        new Thread(() -> {
+                            enableSystemProtection();
+                            try {
+                                Process p = Runtime.getRuntime().exec(new String[]{"rm", "-rf", debianRootfs.getAbsolutePath()});
+                                p.waitFor();
+                                mainAct.runOnUiThread(this::updateDynamicButtons);
+                            } catch (Exception e) {
+                                mainAct.runOnUiThread(() -> Snackbar.make(getView(), "Delete Failed: " + e.getMessage(), Snackbar.LENGTH_LONG).show());
+                            } finally {
+                                disableSystemProtection();
+                            }
+                        }).start();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        });
+    }
+
+    private void bindResetButtonLogic(MainActivity mainAct, File debianRootfs) {
+        if (btnAdvancedReset == null) return;
+        btnAdvancedReset.setOnClickListener(v -> {
+            new android.app.AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.install_dialog_reset_title)
+                    .setMessage(R.string.install_dialog_reset_msg)
+                    .setPositiveButton(R.string.install_dialog_reset_confirm, (dialog, which) -> {
+                        Snackbar.make(v, "Starting reset...", Snackbar.LENGTH_SHORT).show();
+                        mainAct.invalidateModuleStateTrust();
+                        new Thread(() -> {
+                            enableSystemProtection();
+                            try {
+                                Process p = Runtime.getRuntime().exec(new String[]{"rm", "-rf", debianRootfs.getAbsolutePath()});
+                                p.waitFor();
+                                mainAct.runOnUiThread(this::updateDynamicButtons);
+                            } catch (Exception e) {
+                                mainAct.runOnUiThread(() -> Snackbar.make(getView(), "Reset Failed: " + e.getMessage(), Snackbar.LENGTH_LONG).show());
+                            } finally {
+                                disableSystemProtection();
+                            }
+                        }).start();
+                    })
+                    .setNegativeButton(R.string.install_dialog_reset_cancel, null)
+                    .show();
+        });
+    }
+
+    private void processNextInQueue() {
+        if (installationQueue.isEmpty()) {
+            isBatchInstalling = false;
+            saveQueueToPrefs();
+            btnLaunchInstall.setEnabled(false);
+            btnLaunchInstall.setText(getString(R.string.install_btn_launch));
+            fetchLocalVarsFromPRoot();
+            if (getView() != null) Snackbar.make(getView(), R.string.install_msg_finished, Snackbar.LENGTH_LONG).show();
+            return;
+        }
+
+        String nextModule = installationQueue.remove(0);
+        saveQueueToPrefs();
+        btnLaunchInstall.setEnabled(false);
+        btnLaunchInstall.setText("Installing " + nextModule + "...");
+
+        File rootfsDir = new File(requireContext().getFilesDir(), "rootfs/installed-rootfs/iiab");
+        if (prootEngine == null) prootEngine = new PRootEngine();
+
+        String installCmd = "sed -i -E '/^[[:space:]]*" + nextModule + "_(install|enabled)[[:space:]]*:/d' /etc/iiab/local_vars.yml && " +
+                "echo '" + nextModule + "_install: True' >> /etc/iiab/local_vars.yml && " +
+                "echo '" + nextModule + "_enabled: True' >> /etc/iiab/local_vars.yml && " +
+                "cd /opt/iiab/iiab && ./runrole " + nextModule;
+
+        prootEngine.executeInContainer(requireContext(), rootfsDir.getAbsolutePath(), installCmd, new PRootEngine.OutputListener() {
+            @Override
+            public void onOutputLine(String line) {
+                if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).runOnUiThread(() -> ((MainActivity) getActivity()).addToLog("[Ansible] " + line));
+            }
+            @Override
+            public void onProcessExit(int exitCode) {
+                if (getActivity() != null) getActivity().runOnUiThread(() -> processNextInQueue());
+            }
+            @Override
+            public void onError(String error) {
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        isBatchInstalling = false;
+                        updateDynamicButtons();
+                        if (getView() != null) Snackbar.make(getView(), "Error: " + error, Snackbar.LENGTH_LONG).show();
+                    });
+                }
+            }
+        });
+    }
+
+    private void editLocalVarsForMaps(File debianRootfs, InstallationPlanner.Tier tier) {
+        File yamlFile = new File(debianRootfs, "etc/iiab/local_vars.yml");
+        if (!yamlFile.exists()) return;
+        try {
+            StringBuilder content = new StringBuilder();
+            BufferedReader reader = new BufferedReader(new FileReader(yamlFile));
+            String line;
+            while ((line = reader.readLine()) != null) content.append(line).append("\n");
+            reader.close();
+
+            String text = content.toString();
+            // Always make sure the installation and module are active
+            text = text.replaceAll("(?m)^maps_install:\\s*.*", "maps_install: True");
+            text = text.replaceAll("(?m)^maps_enabled:\\s*.*", "maps_enabled: True");
+
+            if (tier == InstallationPlanner.Tier.BASIC) {
+                // BASIC TIER ~0.2GB
+                // Note: The current base image already has these default values.
+                // We leave them commented for the future in case the base image changes.
+                /*
+                text = text.replaceAll("(?m)^maps_vector_quality:\\s*.*", "maps_vector_quality: nat-z8");
+                text = text.replaceAll("(?m)^maps_satellite_zoom:\\s*.*", "maps_satellite_zoom: 7");
+                text = text.replaceAll("(?m)^maps_terrain_zoom:\\s*.*", "maps_terrain_zoom: none");
+                */
+            } else if (tier == InstallationPlanner.Tier.STANDARD) {
+                // STANDARD TIER ~11GB
+                text = text.replaceAll("(?m)^maps_vector_quality:\\s*.*", "maps_vector_quality: osm-z11");
+                text = text.replaceAll("(?m)^maps_satellite_zoom:\\s*.*", "maps_satellite_zoom: 9");
+                text = text.replaceAll("(?m)^maps_terrain_zoom:\\s*.*", "maps_terrain_zoom: 7");
+            } else if (tier == InstallationPlanner.Tier.FULL) {
+                // FULL TIER ~16GB
+                text = text.replaceAll("(?m)^maps_vector_quality:\\s*.*", "maps_vector_quality: osm-z11");
+                text = text.replaceAll("(?m)^maps_satellite_zoom:\\s*.*", "maps_satellite_zoom: 9");
+                text = text.replaceAll("(?m)^maps_terrain_zoom:\\s*.*", "maps_terrain_zoom: 8");
+            }
+
+            java.io.FileWriter writer = new java.io.FileWriter(yamlFile);
+            writer.write(text);
+            writer.close();
+        } catch (Exception ignored) {}
+    }
+
+    private void downloadAndIndexKiwix(String zimFilename, File debianRootfs) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(() -> btnFastInstall.setText("Preparing Kiwix..."));
+
+        String zimUrl = "https://download.kiwix.org/zim/wikipedia/" + zimFilename;
+        File libraryDir = new File(debianRootfs, "library/zims/content");
+        if (!libraryDir.exists()) libraryDir.mkdirs();
+
+        if (aria2Manager == null) aria2Manager = new Aria2Manager();
+        aria2Manager.startDownload(requireContext(), zimUrl, new Aria2Manager.DownloadListener() {
+            @Override
+            public void onProgress(int percentage, String speed, String eta) {
+                if (isAdded() && getActivity() != null) getActivity().runOnUiThread(() -> btnFastInstall.setText("ZIM: " + percentage + "% | " + speed + "/s"));
+            }
+            @Override
+            public void onComplete(String downloadPath) {
+                if (getActivity() == null) return;
+                getActivity().runOnUiThread(() -> btnFastInstall.setText("Indexing ZIM..."));
+                File downloadedZim = new File(downloadPath, zimFilename);
+                if (downloadedZim.exists()) downloadedZim.renameTo(new File(libraryDir, zimFilename));
+
+                if (prootEngine == null) prootEngine = new PRootEngine();
+                prootEngine.executeInContainer(requireContext(), debianRootfs.getAbsolutePath(), "iiab-make-kiwix-lib", new PRootEngine.OutputListener() {
+                    @Override public void onOutputLine(String line) { if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).runOnUiThread(() -> ((MainActivity) getActivity()).addToLog("[Kiwix] " + line)); }
+                    @Override public void onProcessExit(int exitCode) { runMapsAnsible(debianRootfs); }
+                    @Override public void onError(String error) { runMapsAnsible(debianRootfs); }
+                });
+            }
+            @Override public void onError(String error) { runMapsAnsible(debianRootfs); }
+        });
+    }
+
+    private void runMapsAnsible(File debianRootfs) {
+        if (getActivity() == null) return;
+
+        InstallationPlanner.Tier safeTier = (selectedTier != null) ? selectedTier : InstallationPlanner.Tier.BASIC;
+
+        if (safeTier == InstallationPlanner.Tier.BASIC) {
+            // BYPASS PARA BASIC: It is already configured, we do not burn CPU/Network with Ansible.
+            getActivity().runOnUiThread(() -> btnFastInstall.setText("Maps already provisioned..."));
+            // We give 1.5 seconds for the user to read the message before finishing
+            new Handler(Looper.getMainLooper()).postDelayed(this::finishInstallationSuccess, 1500);
+            return;
+        }
+
+        getActivity().runOnUiThread(() -> btnFastInstall.setText("Configuring Maps..."));
+
+        if (prootEngine == null) prootEngine = new PRootEngine();
+        String installCmd = "cd /opt/iiab/iiab && ./runrole --reinstall maps";
+
+        prootEngine.executeInContainer(requireContext(), debianRootfs.getAbsolutePath(), installCmd, new PRootEngine.OutputListener() {
+            @Override public void onOutputLine(String line) {
+                if (getActivity() instanceof MainActivity) {
+                    ((MainActivity) getActivity()).runOnUiThread(() -> ((MainActivity) getActivity()).addToLog("[Ansible] " + line));
+                }
+            }
+            @Override public void onProcessExit(int exitCode) { finishInstallationSuccess(); }
+            @Override public void onError(String error) { finishInstallationSuccess(); }
+        });
+    }
+
+    private void finishInstallationSuccess() {
+        disableSystemProtection();
+        isDownloadingRootfs = false;
+        if (isAdded() && getActivity() != null) {
+            getActivity().runOnUiThread(() -> {
+                btnFastInstall.setText(R.string.install_btn_reinstall);
+                btnFastInstall.setAlpha(1.0f);
+                updateDynamicButtons();
+                requestFreshLocalVarsSilently();
+                if (getView() != null) Snackbar.make(getView(), "System Deployment Successful!", Snackbar.LENGTH_LONG).show();
+            });
         }
     }
 
-    private void pollForJsonFile(File jsonFile, int attemptsLeft, int delayMs) {
-        if (attemptsLeft <= 0) {
-            android.util.Log.w(TAG, "TIMEOUT: local_vars.json never appeared. Using cached state.");
+    private void abortInstallation(String message) {
+        disableSystemProtection();
+        isDownloadingRootfs = false;
+        if (isAdded() && getActivity() != null) {
+            getActivity().runOnUiThread(() -> {
+                btnFastInstall.setText(R.string.install_btn_install);
+                btnFastInstall.setAlpha(1.0f);
+                updateDynamicButtons();
+                if (getView() != null) Snackbar.make(getView(), message, Snackbar.LENGTH_LONG).show();
+            });
+        }
+    }
+
+    private void fetchLocalVarsFromPRoot() {
+        File rootfsDir = new File(requireContext().getFilesDir(), "rootfs/installed-rootfs/iiab");
+        File localVarsFile = new File(rootfsDir, "etc/iiab/local_vars.yml");
+
+        if (!rootfsDir.exists() || !rootfsDir.isDirectory() || !localVarsFile.exists()) {
+            lastKnownState = new JSONObject();
             verifyInstallationState(lastKnownState);
             return;
         }
 
-        if (jsonFile.exists() && jsonFile.length() > 0) {
-            android.util.Log.d(TAG, "SUCCESS: Found fresh local_vars.json!");
+        new Thread(() -> {
             try {
-                StringBuilder text = new StringBuilder();
-                BufferedReader br = new BufferedReader(new FileReader(jsonFile));
+                StringBuilder yamlOutput = new StringBuilder();
+                BufferedReader br = new BufferedReader(new FileReader(localVarsFile));
                 String line;
                 while ((line = br.readLine()) != null) {
-                    text.append(line);
+                    yamlOutput.append(line).append("\n");
                 }
                 br.close();
 
-                JSONObject freshVars = new JSONObject(text.toString());
+                JSONObject freshVars = parseYamlToJson(yamlOutput.toString());
                 lastKnownState = freshVars;
+
                 if (getActivity() instanceof MainActivity) {
                     getActivity().getSharedPreferences("iiab_queue_prefs", Context.MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("is_module_state_trusted", true)
-                            .apply();
+                            .edit().putBoolean("is_module_state_trusted", true).apply();
                 }
-                verifyInstallationState(freshVars);
-                return;
-            } catch (Exception e) {
-                android.util.Log.e(TAG, "Failed to parse fresh JSON", e);
-                verifyInstallationState(lastKnownState);
-                return;
-            }
-        }
 
-        // KEEP WAITING
-        new Handler(android.os.Looper.getMainLooper()).postDelayed(() ->
-                pollForJsonFile(jsonFile, attemptsLeft - 1, delayMs), delayMs);
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> verifyInstallationState(freshVars));
+                }
+            } catch (Exception e) {
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> verifyInstallationState(lastKnownState));
+                }
+            }
+        }).start();
     }
 
-    // --- LOGIC: VERIFY AND COLORIZE ---
+    private JSONObject parseYamlToJson(String yaml) {
+        JSONObject json = new JSONObject();
+        String[] lines = yaml.split("\n");
+        for (String line : lines) {
+            if (line.contains(":") && !line.trim().startsWith("#")) {
+                String[] parts = line.split(":", 2);
+                String key = parts[0].trim();
+                String val = parts[1].trim().toLowerCase();
+
+                if (key.endsWith("_install") || key.endsWith("_enabled")) {
+                    try {
+                        boolean isTrue = val.equals("true") || val.equals("yes") || val.equals("1");
+                        json.put(key, isTrue);
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+        return json;
+    }
+
     private void verifyInstallationState(JSONObject jsonVars) {
         new Thread(() -> {
             if (!isAdded() || getActivity() == null || rolesContainer == null) return;
@@ -609,7 +1285,6 @@ public class DeployFragment extends Fragment {
 
             for (int r = 0; r < rolesContainer.getChildCount(); r++) {
                 LinearLayout row = (LinearLayout) rolesContainer.getChildAt(r);
-
                 for (int c = 0; c < row.getChildCount(); c++) {
                     LinearLayout card = (LinearLayout) row.getChildAt(c);
                     ModuleRegistry.IiabModule module = (ModuleRegistry.IiabModule) card.getTag();
@@ -622,29 +1297,23 @@ public class DeployFragment extends Fragment {
                     boolean isInstallTrue = jsonVars.optBoolean(module.yamlBaseKey + "_install", false);
                     boolean isEnabledTrue = jsonVars.optBoolean(module.yamlBaseKey + "_enabled", false);
                     boolean yamlState = isInstallTrue || isEnabledTrue;
-
                     boolean pingState = isMainServerAlive && pingUrl("http://localhost:8085/" + module.endpoint);
 
-                    // Get global state before entering UI thread
                     MainActivity mainAct = (MainActivity) getActivity();
                     boolean isRunning = mainAct != null && mainAct.isServerAlive;
                     boolean isTrusted = mainAct != null && mainAct.isModuleStateTrusted();
 
-                    // LOGIC FIX: Separate rules for On/Off states
                     boolean isConfirmedInstalled;
                     boolean isDiscrepancy;
 
                     if (isRunning) {
-                        // Server ON: YAML and Ping must match perfectly
                         isConfirmedInstalled = yamlState && pingState;
                         isDiscrepancy = yamlState != pingState;
                     } else {
-                        // Server OFF: Pings will fail. Trust YAML and memory state.
                         isConfirmedInstalled = yamlState;
                         isDiscrepancy = yamlState && !isTrusted;
                     }
 
-                    // Freeze variables to pass them to the UI thread
                     final boolean finalConfirmed = isConfirmedInstalled;
                     final boolean finalDiscrepancyFlag = isDiscrepancy;
                     final boolean finalIsRunning = isRunning;
@@ -654,36 +1323,29 @@ public class DeployFragment extends Fragment {
                         checkBox.setOnCheckedChangeListener(null);
 
                         if (finalConfirmed && !finalDiscrepancyFlag) {
-                            // RULE 1: Installed and Trusted
                             checkBox.setVisibility(View.GONE);
                             led.setVisibility(View.VISIBLE);
                             led.setBackgroundTintList(null);
 
                             if (finalIsRunning) {
-                                // Live absolute certainty (GREEN)
                                 led.setBackgroundResource(R.drawable.led_on_green);
                                 card.setOnClickListener(v -> Snackbar.make(v, R.string.install_msg_confirmed, Snackbar.LENGTH_LONG).show());
                             } else {
-                                // Offline but trusted (PURPLE)
-                                led.setBackgroundResource(R.drawable.led_on_green); // Use green as base shape...
-                                led.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#9C27B0"))); // ... and tint it purple
+                                led.setBackgroundResource(R.drawable.led_on_green);
+                                led.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#9C27B0")));
                                 card.setOnClickListener(v -> Snackbar.make(v, R.string.install_msg_offline_trusted, Snackbar.LENGTH_LONG).show());
                             }
                         } else if (finalDiscrepancyFlag) {
-                            // RULE 2: Real discrepancy or untrusted memory (YELLOW/ORANGE)
                             checkBox.setVisibility(View.GONE);
                             led.setVisibility(View.VISIBLE);
                             led.setBackgroundResource(R.drawable.led_off);
                             led.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#FFC107")));
-
                             card.setOnClickListener(v -> Snackbar.make(v, R.string.install_warning_discrepancy_msg, Snackbar.LENGTH_LONG).show());
                         } else {
-                            // RULE 3: Available to install (CHECKBOX)
                             led.setVisibility(View.GONE);
                             checkBox.setVisibility(View.VISIBLE);
                             checkBox.setChecked(false);
 
-                            // Security lock if server is running
                             if (finalIsRunning) {
                                 checkBox.setEnabled(false);
                                 card.setAlpha(0.6f);
@@ -695,24 +1357,18 @@ public class DeployFragment extends Fragment {
                                 card.setOnClickListener(v -> checkBox.toggle());
                             }
 
-                            if (!newInstallCheckboxes.contains(checkBox)) {
-                                newInstallCheckboxes.add(checkBox);
-                            }
+                            if (!newInstallCheckboxes.contains(checkBox)) newInstallCheckboxes.add(checkBox);
                             checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> evaluateLaunchButton());
                         }
                     });
 
-                    if (finalDiscrepancyFlag) {
-                        discrepancyFound = true;
-                    }
+                    if (finalDiscrepancyFlag) discrepancyFound = true;
                 }
             }
 
             final boolean finalDiscrepancy = discrepancyFound;
             getActivity().runOnUiThread(() -> {
-                if (discrepancyWarning != null) {
-                    discrepancyWarning.setVisibility(finalDiscrepancy ? View.VISIBLE : View.GONE);
-                }
+                if (discrepancyWarning != null) discrepancyWarning.setVisibility(finalDiscrepancy ? View.VISIBLE : View.GONE);
                 evaluateLaunchButton();
             });
 
@@ -753,464 +1409,365 @@ public class DeployFragment extends Fragment {
         }
     }
 
-    private boolean pingUrl(String urlStr) {
-        try {
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setUseCaches(false);
-            conn.setInstanceFollowRedirects(false);
-            conn.setConnectTimeout(1500);
-            conn.setReadTimeout(1500);
-            conn.setRequestMethod("HEAD");
-            int responseCode = conn.getResponseCode();
-            return (responseCode >= 200 && responseCode < 400);
-        } catch (Exception e) {
-            return false;
-        }
+    // =========================================================================================
+    // REGION 6: BACKUP & RESTORE SAF
+    // =========================================================================================
+
+    private void setupSafLaunchers() {
+        importBackupLauncher = registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> {
+            if (uri != null) importBackupSafely(uri);
+        });
+
+        exportBackupLauncher = registerForActivityResult(new ActivityResultContracts.CreateDocument("application/gzip"), uri -> {
+            if (uri != null && selectedBackupFile != null) exportBackupSafely(uri, selectedBackupFile);
+        });
     }
 
-    private String getTermuxArch() {
-        try {
-            android.content.pm.ApplicationInfo info = requireContext().getPackageManager().getApplicationInfo("com.termux", 0);
-            String nativeLibDir = info.nativeLibraryDir;
-
-            if (nativeLibDir != null) {
-                if (nativeLibDir.endsWith("arm64")) return "arm64-v8a";
-                if (nativeLibDir.endsWith("arm")) return "armeabi-v7a";
-                if (nativeLibDir.endsWith("x86_64")) return "x86_64";
-                if (nativeLibDir.endsWith("x86")) return "x86";
-            }
-        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-            return "N/A";
-        }
-
-        if (android.os.Build.SUPPORTED_ABIS.length > 0) {
-            return android.os.Build.SUPPORTED_ABIS[0];
-        }
-        return "unknown";
-    }
-
-    // --- METHODS FOR PERSISTING THE INSTALLATION QUEUE ---
-    private void saveQueueToPrefs() {
-        if (getActivity() == null) return;
-        android.content.SharedPreferences prefs = getActivity().getSharedPreferences("iiab_queue_prefs", android.content.Context.MODE_PRIVATE);
-        String queueString = android.text.TextUtils.join(",", installationQueue);
-        prefs.edit().putString("pending_modules", queueString).putBoolean("is_batch_installing", isBatchInstalling).apply();
-    }
-
-    private void restoreQueueFromPrefs() {
-        if (getActivity() == null) return;
-        android.content.SharedPreferences prefs = getActivity().getSharedPreferences("iiab_queue_prefs", android.content.Context.MODE_PRIVATE);
-        isBatchInstalling = prefs.getBoolean("is_batch_installing", false);
-        String queueString = prefs.getString("pending_modules", "");
-
-        installationQueue.clear();
-        if (!queueString.isEmpty()) {
-            String[] modules = queueString.split(",");
-            installationQueue.addAll(java.util.Arrays.asList(modules));
-        }
-    }
-
-    // --- QUEUE DIRECTOR ---
-    private void processNextInQueue() {
-        if (installationQueue.isEmpty()) {
-            // The queue is empty! We're finished.
-            isBatchInstalling = false;
-            saveQueueToPrefs();
-
-            // We re-enable the UI and refresh the final JSON
-            btnLaunchInstall.setEnabled(false);
-            btnLaunchInstall.setText(getString(R.string.install_btn_launch));
-            requestFreshLocalVars();
-
-            if (getView() != null) {
-                Snackbar.make(getView(), R.string.install_msg_finished, Snackbar.LENGTH_LONG).show();
-            }
-            return;
-        }
-
-        // We remove the FIRST element from the queue
-        String nextModule = installationQueue.remove(0);
-        saveQueueToPrefs();
-
-        android.util.Log.d(TAG, "Queue: Sending module to Termux -> " + nextModule);
-
-        // We've blocked the UI so the user knows what's going on.
-        btnLaunchInstall.setEnabled(false);
-        btnLaunchInstall.setText("Installing " + nextModule + "...");
-
-        // We launch the Termux command
-        if (getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).executeTermuxCommandHeadless("--install-module " + nextModule);
-        }
-    }
-
-    /**
-     * Master UI Controller for the Deployment Fragment.
-     */
-    private void updateDynamicButtons() {
-        MainActivity mainAct = (MainActivity) getActivity();
-        if (mainAct == null || !isAdded()) return;
-
-        boolean isServerRunning = mainAct.isServerAlive;
-        boolean isTermuxInst = mainAct.isTermuxInstalled();
-
-        File stateDir = new File(Environment.getExternalStorageDirectory(), ".iiab_state");
-        boolean isProotInstalled = new File(stateDir, "flag_system_installed").exists() ||
-                new File(stateDir, "flag_iiab_ready").exists() ||
-                new File(stateDir, "local_vars.json").exists();
-
-        refreshDashboardLeds(mainAct);
-
-        // LOGIC OF THE ANIMATED BANNER
-        View bannerWarning = getView().findViewById(R.id.banner_server_warning);
-        if (bannerWarning != null) {
-            boolean isBannerVisible = bannerWarning.getVisibility() == View.VISIBLE;
-
-            // Animate only if there is a real state change to prevent screen flashing.
-            if (isServerRunning && !isBannerVisible) {
-                android.transition.TransitionManager.beginDelayedTransition((ViewGroup) getView(), new android.transition.AutoTransition().setDuration(300));
-                bannerWarning.setVisibility(View.VISIBLE);
-            } else if (!isServerRunning && isBannerVisible) {
-                android.transition.TransitionManager.beginDelayedTransition((ViewGroup) getView(), new android.transition.AutoTransition().setDuration(300));
-                bannerWarning.setVisibility(View.GONE);
-            }
-        }
-
-        // --- REFRESH BUTTON LOGIC ---
-        if (btnRefreshModules != null) {
-            btnRefreshModules.setEnabled(true);
-
-            if (isServerRunning || !isTermuxInst || !isProotInstalled) {
-                btnRefreshModules.setTextColor(Color.parseColor("#9E9E9E"));
-                btnRefreshModules.setAlpha(0.6f);
-                btnRefreshModules.setOnClickListener(v -> {
-                    if (!isTermuxInst || !isProotInstalled)
-                        Snackbar.make(v, R.string.install_msg_termux_missing, Snackbar.LENGTH_LONG).show();
-                    else if (isServerRunning)
-                        Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
-                });
-            } else {
-                btnRefreshModules.setTextColor(Color.parseColor("#2196F3"));
-                btnRefreshModules.setAlpha(1.0f);
-                btnRefreshModules.setOnClickListener(v -> {
-                    v.setAlpha(0.5f);
-                    requestFreshLocalVars();
-                    new Handler(Looper.getMainLooper()).postDelayed(() -> v.setAlpha(1.0f), 1000);
-                });
-            }
-        }
-
-        // --- ADVANCED SECTION LOGIC (2x2 Grid) ---
-        btnFastInstall.setEnabled(true);
-        btnFastDelete.setEnabled(true);
-        if (btnAdvancedReset != null) btnAdvancedReset.setEnabled(true);
-        if (btnAdvancedBackup != null) btnAdvancedBackup.setEnabled(true);
-        if (btnAdvancedRestore != null) btnAdvancedRestore.setEnabled(true);
-        if (txtSelectBackupTitle != null) txtSelectBackupTitle.setEnabled(true);
-
-        // Force Stop is always active as an emergency exit
-        if (btnAdvancedForceStop != null) {
-            btnAdvancedForceStop.setEnabled(true);
-            btnAdvancedForceStop.setAlpha(1.0f);
-            btnAdvancedForceStop.setOnClickListener(v -> openTermuxAppInfo());
-        }
-
-        if (!isTermuxInst) {
-            // CASE A: Termux missing
-            float lockAlpha = 0.5f;
-            btnFastInstall.setAlpha(lockAlpha);
-            btnFastDelete.setAlpha(lockAlpha);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(lockAlpha);
-            if (btnAdvancedRestore != null) btnAdvancedRestore.setAlpha(lockAlpha);
-            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(lockAlpha);
-            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(lockAlpha);
-
-            btnFastInstall.setText(R.string.install_btn_install);
-
-            View.OnClickListener noTermux = v -> Snackbar.make(v, R.string.install_msg_termux_missing, Snackbar.LENGTH_LONG).show();
-            btnFastInstall.setOnClickListener(noTermux);
-            btnFastDelete.setOnClickListener(noTermux);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setOnClickListener(noTermux);
-            if (btnAdvancedRestore != null) btnAdvancedRestore.setOnClickListener(noTermux);
-            if (btnAdvancedReset != null) btnAdvancedReset.setOnClickListener(noTermux);
-            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setOnClickListener(noTermux);
-
-        } else if (isServerRunning) {
-            // CASE B: Server Running (Security lock)
-            float lockAlpha = 0.5f;
-            btnFastInstall.setAlpha(lockAlpha);
-            btnFastDelete.setAlpha(lockAlpha);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(lockAlpha);
-            if (btnAdvancedRestore != null) btnAdvancedRestore.setAlpha(lockAlpha);
-            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(lockAlpha);
-            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(lockAlpha);
-
-            btnFastInstall.setText(R.string.install_btn_reinstall);
-
-            View.OnClickListener serverHot = v -> Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
-            btnFastInstall.setOnClickListener(serverHot);
-            btnFastDelete.setOnClickListener(serverHot);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setOnClickListener(serverHot);
-            if (btnAdvancedRestore != null) btnAdvancedRestore.setOnClickListener(serverHot);
-            if (btnAdvancedReset != null) btnAdvancedReset.setOnClickListener(serverHot);
-            if (txtSelectBackupTitle != null)
-                txtSelectBackupTitle.setOnClickListener(serverHot);
-
-        } else {
-            // CASE C: Clear Path (Server Offline)
-            btnFastInstall.setAlpha(1.0f);
-            btnFastDelete.setAlpha(1.0f);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(1.0f);
-            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(1.0f);
-            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(1.0f);
-            refreshRestoreButtonLogic();
-
-            // Restore button starts locked until a valid backup is selected
-            if (btnAdvancedRestore != null) {
-                btnAdvancedRestore.setAlpha(0.5f);
-                btnAdvancedRestore.setOnClickListener(v -> {
-                    Snackbar.make(v, "Please select a backup first.", Snackbar.LENGTH_LONG).show();
-                });
+    private void bindBackupButtonLogic(MainActivity mainAct, File backupsDir, File iiabRootDir) {
+        if (btnAdvancedBackup == null) return;
+        btnAdvancedBackup.setOnClickListener(v -> {
+            if (isBackupInProgress) {
+                new android.app.AlertDialog.Builder(requireContext())
+                        .setTitle(getString(R.string.install_msg_backup_in_progress_title))
+                        .setMessage(getString(R.string.install_msg_backup_in_progress_body))
+                        .setPositiveButton(getString(R.string.install_btn_force_stop_process), (dialog, which) -> {
+                            isBackupInProgress = false;
+                            btnAdvancedBackup.setText(getString(R.string.install_btn_backup));
+                            Snackbar.make(getView(), getString(R.string.install_msg_backup_aborted), Snackbar.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton(getString(R.string.install_btn_let_finish), null)
+                        .setIcon(android.R.drawable.ic_dialog_alert)
+                        .show();
+                return;
             }
 
-            if (isProotInstalled) {
-                btnFastInstall.setText(R.string.install_btn_reinstall);
-            } else {
-                btnFastInstall.setText(R.string.install_btn_install);
-            }
+            isBackupInProgress = true;
+            btnAdvancedBackup.setText(getString(R.string.install_msg_compressing));
+            Snackbar.make(v, getString(R.string.install_msg_creating_backup), Snackbar.LENGTH_LONG).show();
 
-            // REAL SHARES
-            btnFastInstall.setOnClickListener(v -> {
-                mainAct.invalidateModuleStateTrust();
-                Snackbar.make(v, "Starting fast installation (pull-rootfs)...", Snackbar.LENGTH_SHORT).show();
-                mainAct.executeTermuxCommandHeadless("--pull-rootfs");
-            });
+            new Thread(() -> {
+                enableSystemProtection();
+                try {
+                    String date = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(new java.util.Date());
+                    File backupFile = new File(backupsDir, "iiab_backup_" + date + ".tar.gz");
 
-            btnFastDelete.setOnClickListener(v -> {
-                mainAct.invalidateModuleStateTrust();
-                Snackbar.make(v, "Starting deletion (remove-rootfs)...", Snackbar.LENGTH_SHORT).show();
-                mainAct.executeTermuxCommandHeadless("--remove-rootfs");
-            });
+                    File staticTar = new File(requireContext().getApplicationInfo().nativeLibraryDir, "libtar.so");
+                    File staticGzip = new File(requireContext().getApplicationInfo().nativeLibraryDir, "libgzip.so");
+                    String tarBin = staticTar.exists() ? staticTar.getAbsolutePath() : "tar";
+                    String gzipBin = staticGzip.exists() ? staticGzip.getAbsolutePath() : "gzip";
 
-            if (btnAdvancedBackup != null) {
-                btnAdvancedBackup.setOnClickListener(v -> {
-                    Snackbar.make(v, "Starting backup (backup-rootfs)...", Snackbar.LENGTH_SHORT).show();
-                    mainAct.executeTermuxCommandHeadless("--backup-rootfs");
-                });
-            }
+                    String cmd = tarBin + " -cf - -C " + iiabRootDir.getAbsolutePath() + " installed-rootfs | " + gzipBin + " > " + backupFile.getAbsolutePath();
+                    Process p = Runtime.getRuntime().exec(new String[]{"/system/bin/sh", "-c", cmd});
+                    int exitCode = p.waitFor();
 
-            if (btnAdvancedReset != null) {
-                btnAdvancedReset.setOnClickListener(v -> {
-                    new android.app.AlertDialog.Builder(requireContext())
-                            .setTitle(R.string.install_dialog_reset_title)
-                            .setMessage(R.string.install_dialog_reset_msg)
-                            .setPositiveButton(R.string.install_dialog_reset_confirm, (dialog, which) -> {
-                                Snackbar.make(v, "Starting reset (reset-iiab)...", Snackbar.LENGTH_SHORT).show();
-                                mainAct.invalidateModuleStateTrust();
-                                mainAct.executeTermuxCommandHeadless("--reset-iiab");
-                            })
-                            .setNegativeButton(R.string.install_dialog_reset_cancel, null)
-                            .show();
-                });
-            }
-
-            // --- BACKUP DROP-DOWN MENU LOGIC  ---
-            if (txtSelectBackupTitle != null) {
-                txtSelectBackupTitle.setOnClickListener(v -> {
-                    boolean isCollapsed = containerBackupList.getVisibility() == View.GONE;
-
-                    if (isCollapsed) {
-                        // Display the menu visually
-                        containerBackupList.setVisibility(View.VISIBLE);
-                        txtSelectBackupTitle.setText(getString(R.string.install_adv_select_backup_open));
-                        txtBackupStatus.setText(getString(R.string.install_msg_fetching_backups));
-                        txtBackupStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_secondary));
-
-                        // Trigger the command to Termux to generate the list
-                        mainAct.executeTermuxCommandHeadless("--list-backups");
-
-                        // Start hunting for the JSON file (wait up to 5 seconds)
-                        File backupsJsonFile = new File(stateDir, "backups_list.json");
-                        if (backupsJsonFile.exists())
-                            backupsJsonFile.delete(); // Clean up old queries
-                        pollForBackupsJson(backupsJsonFile, 5, 1000);
-
-                    } else {
-                        // Close the menu
-                        containerBackupList.setVisibility(View.GONE);
-                        txtSelectBackupTitle.setText(getString(R.string.install_adv_select_backup));
-                    }
-                });
-            }
-        }
-    }
-
-    // --- AUXILIARY METHODS ---
-
-    public void openTermuxAppInfo() {
-        try {
-            android.content.Intent intent = new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            android.net.Uri uri = android.net.Uri.fromParts("package", "com.termux", null);
-            intent.setData(uri);
-            startActivity(intent);
-        } catch (Exception e) {
-            android.util.Log.e(TAG, "Error opening App Info", e);
-        }
-    }
-
-    private void pollForBackupsJson(File jsonFile, int attemptsLeft, int delayMs) {
-        if (attemptsLeft <= 0) {
-            // Time ran out and Termux did not respond
-            if (getActivity() != null) {
-                getActivity().runOnUiThread(() -> {
-                    if (txtBackupStatus != null) {
-                        txtBackupStatus.setText(getString(R.string.install_msg_no_backups));
-                        txtBackupStatus.setTextColor(Color.parseColor("#FF5555")); // Warning red
-                    }
-                    selectedBackupFile = null;
-                    refreshRestoreButtonLogic(); // The master controller decides the button state
-                });
-            }
-            return;
-        }
-
-        if (jsonFile.exists() && jsonFile.length() > 0) {
-            try {
-                StringBuilder text = new StringBuilder();
-                BufferedReader br = new BufferedReader(new FileReader(jsonFile));
-                String line;
-                while ((line = br.readLine()) != null) text.append(line);
-                br.close();
-
-                JSONObject backupsData = new JSONObject(text.toString());
-                org.json.JSONArray backupsArray = backupsData.optJSONArray("backups");
-                String defaultNa = getString(R.string.install_msg_backup_na);
-
-                if (getActivity() != null) {
-                    getActivity().runOnUiThread(() -> {
-                        containerBackupList.removeAllViews();
-
-                        // CRITICAL: Ensure we start with no selection in memory
-                        selectedBackupFile = null;
-
-                        if (backupsArray == null || backupsArray.length() == 0) {
-                            TextView noBackups = new TextView(requireContext());
-                            noBackups.setText(getString(R.string.install_msg_no_backups));
-                            noBackups.setTextColor(Color.parseColor("#FF5555"));
-                            containerBackupList.addView(noBackups);
-                        } else {
-                            android.widget.RadioGroup radioGroup = new android.widget.RadioGroup(requireContext());
-                            radioGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
-
-                            for (int i = 0; i < backupsArray.length(); i++) {
-                                JSONObject backupObj = backupsArray.optJSONObject(i);
-                                if (backupObj == null) continue;
-
-                                String filename = backupObj.optString("filename", "");
-                                String size = backupObj.optString("size", defaultNa);
-                                String date = backupObj.optString("date", defaultNa);
-
-                                android.widget.RadioButton rb = new android.widget.RadioButton(requireContext());
-                                rb.setText(getString(R.string.install_msg_backup_details, filename, size, date));
-                                rb.setTextColor(androidx.core.content.ContextCompat.getColor(requireContext(), R.color.dash_text_primary));
-                                rb.setPadding(0, 16, 0, 16);
-                                rb.setTag(filename);
-
-                                // Magic UX trick: Allow deselection
-                                rb.setOnClickListener(v -> {
-                                    // If tapped the already selected one, uncheck it
-                                    if (filename.equals(selectedBackupFile)) {
-                                        radioGroup.clearCheck();
-                                        selectedBackupFile = null;
-                                    } else {
-                                        // If tapped a new one, update selection
-                                        selectedBackupFile = filename;
-                                    }
-                                    // Refresh button (gray if null, green if selected)
-                                    refreshRestoreButtonLogic();
-                                });
-
-                                radioGroup.addView(rb);
+                    mainAct.runOnUiThread(() -> {
+                        if (isBackupInProgress) {
+                            if (exitCode == 0) {
+                                Snackbar.make(getView(), getString(R.string.install_msg_backup_complete, backupFile.getName()), Snackbar.LENGTH_LONG).show();
+                                selectedBackupFile = backupFile.getName();
+                            } else {
+                                Snackbar.make(getView(), getString(R.string.install_msg_backup_failed, exitCode), Snackbar.LENGTH_LONG).show();
+                                if (backupFile.exists()) backupFile.delete();
                             }
-
-                            // Add the group to the container ONLY ONCE
-                            containerBackupList.addView(radioGroup);
+                        } else {
+                            if (backupFile.exists()) backupFile.delete();
                         }
-
-                        // Refresh general UI after building the list
-                        refreshRestoreButtonLogic();
+                        isBackupInProgress = false;
+                        btnAdvancedBackup.setText(getString(R.string.install_btn_backup));
+                        updateDynamicButtons();
+                        disableSystemProtection();
+                    });
+                } catch (Exception e) {
+                    mainAct.runOnUiThread(() -> {
+                        isBackupInProgress = false;
+                        btnAdvancedBackup.setText(getString(R.string.install_btn_backup));
+                        Snackbar.make(getView(), getString(R.string.install_msg_backup_error, e.getMessage()), Snackbar.LENGTH_LONG).show();
+                        updateDynamicButtons();
+                        disableSystemProtection();
                     });
                 }
-                return;
-            } catch (Exception e) {
-                android.util.Log.e(TAG, "Error parsing backups JSON", e);
-            }
-        }
+            }).start();
+        });
 
-        // If it doesn't exist yet, we'll keep waiting.
-        new Handler(android.os.Looper.getMainLooper()).postDelayed(() ->
-                pollForBackupsJson(jsonFile, attemptsLeft - 1, delayMs), delayMs);
+        if (btnExportBackup != null) {
+            btnExportBackup.setOnClickListener(v -> {
+                if (selectedBackupFile == null) {
+                    Snackbar.make(v, getString(R.string.install_msg_export_please_select), Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+                exportBackupLauncher.launch(selectedBackupFile);
+            });
+        }
+        if (btnImportBackup != null) {
+            btnImportBackup.setOnClickListener(v -> {
+                importBackupLauncher.launch(new String[]{"application/gzip", "application/x-gzip", "*/*"});
+            });
+        }
     }
 
-    /**
-     * Unified function to manage Restore button state.
-     */
+    private void bindBackupMenuLogic(File backupsDir) {
+        if (txtSelectBackupTitle == null) return;
+        txtSelectBackupTitle.setOnClickListener(v -> {
+            boolean isCollapsed = containerBackupList.getVisibility() == View.GONE;
+            if (isCollapsed) {
+                containerBackupList.setVisibility(View.VISIBLE);
+                txtSelectBackupTitle.setText(getString(R.string.install_adv_select_backup_open));
+                containerBackupList.removeAllViews();
+                selectedBackupFile = null;
+
+                File[] backups = backupsDir.listFiles((dir, name) -> name.endsWith(".tar.gz") || name.endsWith(".tar.xz"));
+                if (backups == null || backups.length == 0) {
+                    TextView noBackups = new TextView(requireContext());
+                    noBackups.setText(getString(R.string.install_msg_no_backups));
+                    noBackups.setTextColor(Color.parseColor("#FF5555"));
+                    containerBackupList.addView(noBackups);
+                } else {
+                    java.util.Arrays.sort(backups, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
+                    android.widget.RadioGroup radioGroup = new android.widget.RadioGroup(requireContext());
+                    radioGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
+                    String defaultNa = getString(R.string.install_msg_backup_na);
+
+                    for (File b : backups) {
+                        String filename = b.getName();
+                        String size = String.format(java.util.Locale.US, "%.2f MB", b.length() / (1024.0 * 1024.0));
+                        String date = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(new java.util.Date(b.lastModified()));
+
+                        android.widget.RadioButton rb = new android.widget.RadioButton(requireContext());
+                        rb.setText(getString(R.string.install_msg_backup_details, filename, size, date));
+                        rb.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_primary));
+                        rb.setPadding(0, 16, 0, 16);
+                        rb.setTag(filename);
+
+                        rb.setOnClickListener(radioView -> {
+                            if (filename.equals(selectedBackupFile)) {
+                                radioGroup.clearCheck();
+                                selectedBackupFile = null;
+                            } else {
+                                selectedBackupFile = filename;
+                            }
+                            refreshRestoreButtonLogic();
+                        });
+                        radioGroup.addView(rb);
+                    }
+                    containerBackupList.addView(radioGroup);
+                }
+                refreshRestoreButtonLogic();
+            } else {
+                containerBackupList.setVisibility(View.GONE);
+                txtSelectBackupTitle.setText(getString(R.string.install_adv_select_backup));
+            }
+        });
+    }
+
     private void refreshRestoreButtonLogic() {
         MainActivity mainAct = (MainActivity) getActivity();
         if (mainAct == null || btnAdvancedRestore == null) return;
 
-        // Golden Rule: If server is running or Termux is missing, always gray.
-        if (mainAct.isServerAlive || !mainAct.isTermuxInstalled()) {
+        if (mainAct.isServerAlive) {
             btnAdvancedRestore.setAlpha(0.5f);
-            btnAdvancedRestore.setOnClickListener(v ->
-                    Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show());
+            btnAdvancedRestore.setOnClickListener(v -> Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show());
             return;
         }
 
-        // If server is OFF, check if a backup is selected
         if (selectedBackupFile == null) {
-            // No selection: Gray and prompt to select one
             btnAdvancedRestore.setAlpha(0.5f);
-            btnAdvancedRestore.setOnClickListener(v ->
-                    Snackbar.make(v, R.string.install_msg_select_backup_first, Snackbar.LENGTH_LONG).show());
+            btnAdvancedRestore.setOnClickListener(v -> Snackbar.make(v, R.string.install_msg_select_backup_first, Snackbar.LENGTH_LONG).show());
         } else {
-            // Selection exists: Turn button Green and assign action
             btnAdvancedRestore.setAlpha(1.0f);
             btnAdvancedRestore.setOnClickListener(v -> {
-                String startingMsg = getString(R.string.install_msg_restore_starting, selectedBackupFile);
-                Snackbar.make(v, startingMsg, Snackbar.LENGTH_SHORT).show();
-
+                Snackbar.make(v, getString(R.string.install_msg_restore_starting, selectedBackupFile), Snackbar.LENGTH_SHORT).show();
                 mainAct.invalidateModuleStateTrust();
-                mainAct.executeTermuxCommandHeadless("--restore-rootfs " + selectedBackupFile);
+
+                File backupFile = new File(new File(requireContext().getFilesDir(), "rootfs/backups"), selectedBackupFile);
+                if (!backupFile.exists()) {
+                    Snackbar.make(v, "Backup file missing!", Snackbar.LENGTH_SHORT).show();
+                    return;
+                }
+
+                btnAdvancedRestore.setEnabled(false);
+                btnAdvancedRestore.setText("Restoring...");
+                File iiabRootDir = new File(requireContext().getFilesDir(), "rootfs");
+                TarExtractor tarExtractor = new TarExtractor();
+
+                enableSystemProtection();
+                tarExtractor.startExtraction(requireContext(), backupFile.getAbsolutePath(), iiabRootDir.getAbsolutePath(), new TarExtractor.ExtractionListener() {
+                    @Override
+                    public void onComplete(String destDir) {
+                        mainAct.runOnUiThread(() -> {
+                            disableSystemProtection();
+                            btnAdvancedRestore.setEnabled(true);
+                            btnAdvancedRestore.setText(getString(R.string.install_btn_restore));
+                            Snackbar.make(getView(), "Restore Complete!", Snackbar.LENGTH_LONG).show();
+                            updateDynamicButtons();
+                        });
+                    }
+                    @Override
+                    public void onError(String error) {
+                        mainAct.runOnUiThread(() -> {
+                            disableSystemProtection();
+                            btnAdvancedRestore.setEnabled(true);
+                            btnAdvancedRestore.setText(getString(R.string.install_btn_restore));
+                            Snackbar.make(getView(), getString(R.string.install_msg_restore_failed) + " " + error, Snackbar.LENGTH_LONG).show();
+                            updateDynamicButtons();
+                        });
+                    }
+                });
             });
         }
     }
 
-    private void refreshDashboardLeds(MainActivity mainAct) {
-        if (mainAct == null || ledTermux == null) return;
+    private void importBackupSafely(Uri sourceUri) {
+        btnImportBackup.setEnabled(false);
+        btnImportBackup.setText(getString(R.string.install_msg_importing));
+        Snackbar.make(getView(), getString(R.string.install_msg_importing), Snackbar.LENGTH_LONG).show();
 
-        // 1. Termux LED: Verify if base app is installed
-        boolean isTermuxInst = mainAct.isTermuxInstalled();
-        ledTermux.setBackgroundResource(isTermuxInst ? R.drawable.led_on_green : R.drawable.led_off);
+        new Thread(() -> {
+            enableSystemProtection();
+            try {
+                File backupsDir = new File(requireContext().getFilesDir(), "rootfs/backups");
+                if (!backupsDir.exists()) backupsDir.mkdirs();
 
-        // 2. Developer Mode LED: Native Android system read
-        boolean isDevModeOn = false;
-        try {
-            isDevModeOn = android.provider.Settings.Global.getInt(
-                    requireContext().getContentResolver(),
-                    android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0;
-        } catch (Exception e) {
-            android.util.Log.e(TAG, "Could not check Developer Mode status", e);
-        }
-        ledDevMode.setBackgroundResource(isDevModeOn ? R.drawable.led_on_green : R.drawable.led_off);
+                String fileName = "imported_backup_" + System.currentTimeMillis() + ".tar.gz";
+                File destFile = new File(backupsDir, fileName);
+
+                InputStream is = requireContext().getContentResolver().openInputStream(sourceUri);
+                OutputStream os = new java.io.FileOutputStream(destFile);
+                byte[] buffer = new byte[8192];
+                int length;
+                while ((length = is.read(buffer)) > 0) {
+                    os.write(buffer, 0, length);
+                }
+                os.flush();
+                os.close();
+                is.close();
+
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        btnImportBackup.setEnabled(true);
+                        btnImportBackup.setText(getString(R.string.install_btn_import_backup));
+                        selectedBackupFile = fileName;
+                        updateDynamicButtons();
+                        Snackbar.make(getView(), getString(R.string.install_msg_import_success), Snackbar.LENGTH_LONG).show();
+                    });
+                }
+            } catch (Exception e) {
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        btnImportBackup.setEnabled(true);
+                        btnImportBackup.setText(getString(R.string.install_btn_import_backup));
+                        Snackbar.make(getView(), getString(R.string.install_msg_import_failed, e.getMessage()), Snackbar.LENGTH_LONG).show();
+                    });
+                }
+            } finally {
+                disableSystemProtection();
+            }
+        }).start();
     }
 
-    // =========================================================================
-    // ADB & CPU MONITORING METHODS
-    // =========================================================================
+    private void exportBackupSafely(Uri destUri, String backupFileName) {
+        btnExportBackup.setEnabled(false);
+        btnExportBackup.setText(getString(R.string.install_msg_exporting, backupFileName));
+        Snackbar.make(getView(), getString(R.string.install_msg_exporting, backupFileName), Snackbar.LENGTH_LONG).show();
+
+        new Thread(() -> {
+            enableSystemProtection();
+            try {
+                File sourceFile = new File(new File(requireContext().getFilesDir(), "rootfs/backups"), backupFileName);
+                InputStream is = new java.io.FileInputStream(sourceFile);
+                OutputStream os = requireContext().getContentResolver().openOutputStream(destUri);
+                byte[] buffer = new byte[8192];
+                int length;
+                while ((length = is.read(buffer)) > 0) {
+                    os.write(buffer, 0, length);
+                }
+                os.flush();
+                os.close();
+                is.close();
+
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        btnExportBackup.setEnabled(true);
+                        btnExportBackup.setText(getString(R.string.install_btn_export_backup));
+                        Snackbar.make(getView(), getString(R.string.install_msg_export_success), Snackbar.LENGTH_LONG).show();
+                    });
+                }
+            } catch (Exception e) {
+                if (getActivity() != null) {
+                    getActivity().runOnUiThread(() -> {
+                        btnExportBackup.setEnabled(true);
+                        btnExportBackup.setText(getString(R.string.install_btn_export_backup));
+                        Snackbar.make(getView(), getString(R.string.install_msg_export_failed, e.getMessage()), Snackbar.LENGTH_LONG).show();
+                    });
+                }
+            } finally {
+                disableSystemProtection();
+            }
+        }).start();
+    }
+
+
+    // =========================================================================================
+    // REGION 7: ADB & SYSTEM RESTRICTIONS
+    // =========================================================================================
+
+    private void setupAdbNetworking() {
+        android.net.wifi.WifiManager wifi = (android.net.wifi.WifiManager) requireContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wifi != null) {
+            multicastLock = wifi.createMulticastLock("iiab_adb_multicast_lock");
+            multicastLock.setReferenceCounted(true);
+        }
+    }
+
+    private void setupAdbListeners() {
+        LinearLayout containerDcpr = getView().findViewById(R.id.container_led_dcpr);
+        containerDcpr.setOnClickListener(v -> {
+            if (isConnectedToAdb && android.os.Build.VERSION.SDK_INT >= 34) {
+                IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
+                adbManager.executeCommand("settings put global settings_enable_monitor_phantom_procs 0");
+                Snackbar.make(v, R.string.adb_snack_disabling_cp, Snackbar.LENGTH_SHORT).show();
+                new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
+            }
+        });
+
+        LinearLayout containerPpk = getView().findViewById(R.id.container_led_ppk);
+        containerPpk.setOnClickListener(v -> {
+            if (isConnectedToAdb && android.os.Build.VERSION.SDK_INT >= 31) {
+                IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
+                adbManager.executeCommand("device_config put activity_manager max_phantom_processes 256");
+                Snackbar.make(v, R.string.adb_snack_setting_ppk, Snackbar.LENGTH_SHORT).show();
+                new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
+            }
+        });
+
+        btnAdbAction.setOnClickListener(v -> {
+            if (isConnectedToAdb) {
+                new Thread(() -> {
+                    try { IIABAdbManager.getInstance(requireContext()).disconnect(); } catch (Exception ignored) {}
+                }).start();
+                isConnectedToAdb = false;
+                updateUiState(false);
+            } else if (!isScanning) {
+                startAdbPairingFlow();
+            }
+        });
+    }
+
+    private void registerAdbReceiver() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction("org.iiab.controller.ADB_PAIRING_SUCCESSFUL");
+        filter.addAction("org.iiab.controller.ADB_PAIRING_FAILED");
+        filter.addAction("org.iiab.controller.ADB_PAIRING_SENT");
+        filter.addAction("org.iiab.controller.ADB_CPU_UPDATE");
+        filter.addAction("org.iiab.controller.ADB_RESTRICTIONS_UPDATE");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            requireContext().registerReceiver(adbUiUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            requireContext().registerReceiver(adbUiUpdateReceiver, filter);
+        }
+    }
 
     private void updateUiState(boolean isConnected) {
+        btnAdbAction.setEnabled(true);
         if (isConnected) {
             ledAdbStatus.setBackgroundResource(R.drawable.led_on_green);
             txtAdbLedLabel.setText(getString(R.string.adb_status_connected));
@@ -1218,14 +1775,12 @@ public class DeployFragment extends Fragment {
             btnAdbAction.setText(getString(R.string.adb_btn_disconnect));
             btnAdbAction.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336")));
 
-            // Texto en cursiva mientras consulta
             txtDcpr.setText(android.text.Html.fromHtml("Child Process<br><i>(Checking...)</i>", android.text.Html.FROM_HTML_MODE_COMPACT));
             txtPpk.setText(android.text.Html.fromHtml("PPK Limit<br><i>(Checking...)</i>", android.text.Html.FROM_HTML_MODE_COMPACT));
             ledDcpr.setBackgroundResource(R.drawable.led_off);
             ledDcpr.setBackgroundTintList(null);
             ledPpk.setBackgroundResource(R.drawable.led_off);
             ledPpk.setBackgroundTintList(null);
-
         } else {
             ledAdbStatus.setBackgroundResource(R.drawable.led_off);
             txtAdbLedLabel.setText(getString(R.string.adb_status_offline));
@@ -1242,14 +1797,17 @@ public class DeployFragment extends Fragment {
         }
     }
 
-    private void startAdbPairingFlow() {
+    private void startAdbPairingFlow() { startAdbPairingFlow(false); }
+
+    private void startAdbPairingFlow(boolean isSilentScan) {
         isScanning = true;
         isAttemptingFastConnect = false;
         btnAdbAction.setText(getString(R.string.adb_btn_scanning));
         btnAdbAction.setEnabled(false);
-
         discoveredConnectPort = -1;
         discoveredPairingPort = -1;
+
+        if (multicastLock != null && !multicastLock.isHeld()) multicastLock.acquire();
 
         connectDiscoveryListener = createDiscoveryListener(SERVICE_TYPE_CONNECT);
         pairingDiscoveryListener = createDiscoveryListener(SERVICE_TYPE_PAIRING);
@@ -1258,40 +1816,59 @@ public class DeployFragment extends Fragment {
             nsdManager.discoverServices(SERVICE_TYPE_CONNECT, android.net.nsd.NsdManager.PROTOCOL_DNS_SD, connectDiscoveryListener);
             nsdManager.discoverServices(SERVICE_TYPE_PAIRING, android.net.nsd.NsdManager.PROTOCOL_DNS_SD, pairingDiscoveryListener);
         } catch (Exception e) {
-            android.util.Log.e(TAG, "Error starting NsdManager", e);
             resetScanState();
             return;
         }
 
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            if (isScanning && !isConnectedToAdb) {
-                openDeveloperOptions();
-            }
-        }, 1500);
+        if (!isSilentScan) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (isScanning && !isConnectedToAdb) openDeveloperOptions();
+            }, 4000);
+        }
 
         new Handler(Looper.getMainLooper()).postDelayed(this::checkIfScanTimedOut, 90000);
     }
 
-    private void attemptFastConnection(int port) {
+    private int getDynamicAdbPort(int fallbackPort) {
+        try {
+            Process process = Runtime.getRuntime().exec("getprop service.adb.tls.port");
+            BufferedReader reader = new BufferedReader(new java.io.InputStreamReader(process.getInputStream()));
+            String portStr = reader.readLine();
+            reader.close();
+            if (portStr != null && !portStr.trim().isEmpty()) return Integer.parseInt(portStr.trim());
+        } catch (Exception ignored) {}
+        return fallbackPort;
+    }
+
+    private void attemptFastConnection(String hostIp, int port) {
         if (isAttemptingFastConnect) return;
         isAttemptingFastConnect = true;
 
         Context appContext = requireContext().getApplicationContext();
         new Thread(() -> {
-            try {
-                IIABAdbManager adbManager = IIABAdbManager.getInstance(appContext);
-                adbManager.connect("127.0.0.1", port);
+            boolean connected = false;
+            IIABAdbManager adbManager = IIABAdbManager.getInstance(appContext);
 
+            for (int i = 0; i < 6; i++) {
+                try {
+                    adbManager.connect(hostIp, port);
+                    connected = true;
+                    break;
+                } catch (Exception e) {
+                    try { adbManager.disconnect(); Thread.sleep(600); } catch (Exception ignored) {}
+                }
+            }
+
+            if (connected) {
                 new Handler(Looper.getMainLooper()).post(() -> {
                     stopDiscovery();
                     isConnectedToAdb = true;
-                    btnAdbAction.setText(getString(R.string.adb_status_connected));
+                    if (btnAdbAction != null) btnAdbAction.setText(getString(R.string.adb_status_connected));
                     updateUiState(true);
                 });
-
                 adbManager.startCpuMonitor(appContext);
                 adbManager.checkSystemRestrictions(appContext);
-            } catch (Exception e) {
+            } else {
                 isAttemptingFastConnect = false;
             }
         }).start();
@@ -1309,30 +1886,12 @@ public class DeployFragment extends Fragment {
 
     private android.net.nsd.NsdManager.DiscoveryListener createDiscoveryListener(String serviceType) {
         return new android.net.nsd.NsdManager.DiscoveryListener() {
-            @Override
-            public void onDiscoveryStarted(String regType) {
-            }
-
-            @Override
-            public void onServiceLost(android.net.nsd.NsdServiceInfo service) {
-            }
-
-            @Override
-            public void onDiscoveryStopped(String serviceType) {
-            }
-
-            @Override
-            public void onStartDiscoveryFailed(String serviceType, int errorCode) {
-                nsdManager.stopServiceDiscovery(this);
-            }
-
-            @Override
-            public void onStopDiscoveryFailed(String serviceType, int errorCode) {
-                nsdManager.stopServiceDiscovery(this);
-            }
-
-            @Override
-            public void onServiceFound(android.net.nsd.NsdServiceInfo service) {
+            @Override public void onDiscoveryStarted(String regType) {}
+            @Override public void onServiceLost(android.net.nsd.NsdServiceInfo service) {}
+            @Override public void onDiscoveryStopped(String serviceType) {}
+            @Override public void onStartDiscoveryFailed(String serviceType, int errorCode) { nsdManager.stopServiceDiscovery(this); }
+            @Override public void onStopDiscoveryFailed(String serviceType, int errorCode) { nsdManager.stopServiceDiscovery(this); }
+            @Override public void onServiceFound(android.net.nsd.NsdServiceInfo service) {
                 if (service.getServiceType().contains("_adb-tls")) resolveService(service);
             }
         };
@@ -1340,26 +1899,27 @@ public class DeployFragment extends Fragment {
 
     private void resolveService(android.net.nsd.NsdServiceInfo serviceInfo) {
         nsdManager.resolveService(serviceInfo, new android.net.nsd.NsdManager.ResolveListener() {
-            @Override
-            public void onResolveFailed(android.net.nsd.NsdServiceInfo serviceInfo, int errorCode) {
-            }
-
-            @Override
-            public void onServiceResolved(android.net.nsd.NsdServiceInfo serviceInfo) {
+            @Override public void onResolveFailed(android.net.nsd.NsdServiceInfo serviceInfo, int errorCode) {}
+            @Override public void onServiceResolved(android.net.nsd.NsdServiceInfo serviceInfo) {
                 int port = serviceInfo.getPort();
                 String type = serviceInfo.getServiceType();
+                String hostIp = serviceInfo.getHost().getHostAddress();
+                String myIp = getLocalWifiIp();
+
+                if (hostIp != null && !hostIp.equals(myIp) && !hostIp.equals("127.0.0.1")) return;
 
                 new Handler(Looper.getMainLooper()).post(() -> {
+                    discoveredHostIp = hostIp;
                     if (type.contains("connect")) {
                         discoveredConnectPort = port;
-                        attemptFastConnection(port);
+                        attemptFastConnection(hostIp, port);
                     } else if (type.contains("pairing")) {
                         discoveredPairingPort = port;
                     }
 
                     if (discoveredConnectPort != -1 && discoveredPairingPort != -1 && !isConnectedToAdb) {
                         stopDiscovery();
-                        showPairingNotification(discoveredConnectPort, discoveredPairingPort);
+                        showPairingNotification(discoveredHostIp, discoveredConnectPort, discoveredPairingPort);
                         resetScanState();
                     }
                 });
@@ -1367,15 +1927,15 @@ public class DeployFragment extends Fragment {
         });
     }
 
-    private void showPairingNotification(int connectPort, int pairingPort) {
+    private void showPairingNotification(String hostIp, int connectPort, int pairingPort) {
         RemoteInput remoteInput = new RemoteInput.Builder(AdbPairingReceiver.KEY_PIN_REPLY).setLabel(getString(R.string.adb_notif_input_hint)).build();
         Intent replyIntent = new Intent(requireContext(), AdbPairingReceiver.class);
+        replyIntent.putExtra("hostIp", hostIp);
         replyIntent.putExtra("connectPort", connectPort);
         replyIntent.putExtra("pairingPort", pairingPort);
 
         int flags = PendingIntent.FLAG_UPDATE_CURRENT | (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S ? PendingIntent.FLAG_MUTABLE : 0);
         PendingIntent replyPendingIntent = PendingIntent.getBroadcast(requireContext(), 0, replyIntent, flags);
-
         NotificationCompat.Action action = new NotificationCompat.Action.Builder(android.R.drawable.ic_menu_edit, getString(R.string.adb_notif_action_pin), replyPendingIntent).addRemoteInput(remoteInput).build();
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -1397,15 +1957,11 @@ public class DeployFragment extends Fragment {
 
     private void stopDiscovery() {
         try {
-            if (connectDiscoveryListener != null) {
-                nsdManager.stopServiceDiscovery(connectDiscoveryListener);
-                connectDiscoveryListener = null;
-            }
-            if (pairingDiscoveryListener != null) {
-                nsdManager.stopServiceDiscovery(pairingDiscoveryListener);
-                pairingDiscoveryListener = null;
-            }
+            if (connectDiscoveryListener != null) { nsdManager.stopServiceDiscovery(connectDiscoveryListener); connectDiscoveryListener = null; }
+            if (pairingDiscoveryListener != null) { nsdManager.stopServiceDiscovery(pairingDiscoveryListener); pairingDiscoveryListener = null; }
         } catch (Exception ignored) {
+        } finally {
+            if (multicastLock != null && multicastLock.isHeld()) multicastLock.release();
         }
     }
 
@@ -1438,7 +1994,7 @@ public class DeployFragment extends Fragment {
         xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
 
         YAxis leftAxis = cpuChart.getAxisLeft();
-        leftAxis.setTextColor(Color.LTGRAY);
+        leftAxis.setTextColor(ContextCompat.getColor(requireContext(), R.color.dash_text_secondary));
         leftAxis.setAxisMaximum(100f);
         leftAxis.setAxisMinimum(0f);
         leftAxis.setDrawGridLines(true);
@@ -1450,7 +2006,6 @@ public class DeployFragment extends Fragment {
 
     private void addCpuEntry(float cpuPercentage) {
         if (cpuChart == null || cpuChart.getData() == null) return;
-
         LineData data = cpuChart.getData();
         ILineDataSet set = data.getDataSetByIndex(0);
 
@@ -1476,6 +2031,163 @@ public class DeployFragment extends Fragment {
         cpuChart.moveViewToX(data.getEntryCount());
     }
 
+
+    // =========================================================================================
+    // REGION 8: UTILITIES
+    // =========================================================================================
+
+    private void enableSystemProtection() {
+        // SAFE CHECK
+        if (!isAdded() || getContext() == null) return;
+
+        try {
+            Intent intent = new Intent(requireContext(), WatchdogService.class);
+            intent.setAction(WatchdogService.ACTION_START);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                requireContext().startForegroundService(intent);
+            } else {
+                requireContext().startService(intent);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void disableSystemProtection() {
+        // SAFE CHECK
+        if (!isAdded() || getContext() == null) return;
+
+        try {
+            Intent intent = new Intent(requireContext(), WatchdogService.class);
+//            intent.setAction(WatchdogService.ACTION_START);
+            intent.setAction(WatchdogService.ACTION_STOP);
+            requireContext().startService(intent);
+        } catch (Exception ignored) {}
+    }
+
+    private void saveQueueToPrefs() {
+        if (getActivity() == null) return;
+        android.content.SharedPreferences prefs = getActivity().getSharedPreferences("iiab_queue_prefs", android.content.Context.MODE_PRIVATE);
+        String queueString = android.text.TextUtils.join(",", installationQueue);
+        prefs.edit().putString("pending_modules", queueString).putBoolean("is_batch_installing", isBatchInstalling).apply();
+    }
+
+    private void restoreQueueFromPrefs() {
+        if (getActivity() == null) return;
+        android.content.SharedPreferences prefs = getActivity().getSharedPreferences("iiab_queue_prefs", android.content.Context.MODE_PRIVATE);
+        isBatchInstalling = prefs.getBoolean("is_batch_installing", false);
+        String queueString = prefs.getString("pending_modules", "");
+        installationQueue.clear();
+        if (!queueString.isEmpty()) {
+            String[] modules = queueString.split(",");
+            installationQueue.addAll(java.util.Arrays.asList(modules));
+        }
+    }
+
+    private boolean pingUrl(String urlStr) {
+        try {
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setUseCaches(false);
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(1500);
+            conn.setReadTimeout(1500);
+            conn.setRequestMethod("HEAD");
+            int responseCode = conn.getResponseCode();
+            return (responseCode >= 200 && responseCode < 400);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String getLocalWifiIp() {
+        android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) requireContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        if (wm != null) {
+            int ip = wm.getConnectionInfo().getIpAddress();
+            if (ip != 0) return String.format(java.util.Locale.US, "%d.%d.%d.%d", (ip & 0xff), (ip >> 8 & 0xff), (ip >> 16 & 0xff), (ip >> 24 & 0xff));
+        }
+        return "127.0.0.1";
+    }
+
+    private String getTermuxArch() {
+        try {
+            android.content.pm.ApplicationInfo info = requireContext().getApplicationInfo();
+            String nativeLibDir = info.nativeLibraryDir;
+            if (nativeLibDir != null) {
+                if (nativeLibDir.endsWith("arm64") || nativeLibDir.contains("arm64-v8a")) return "arm64-v8a";
+                if (nativeLibDir.endsWith("arm") || nativeLibDir.contains("armeabi-v7a")) return "armeabi-v7a";
+                if (nativeLibDir.endsWith("x86_64") || nativeLibDir.contains("x86_64")) return "x86_64";
+                if (nativeLibDir.endsWith("x86") || nativeLibDir.contains("x86")) return "x86";
+            }
+        } catch (Exception ignored) {}
+        if (android.os.Build.SUPPORTED_ABIS.length > 0) return android.os.Build.SUPPORTED_ABIS[0];
+        return "unknown";
+    }
+
+    public void openTermuxAppInfo() {
+        try {
+            android.content.Intent intent = new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            android.net.Uri uri = android.net.Uri.fromParts("package", requireContext().getPackageName(), null);
+            intent.setData(uri);
+            startActivity(intent);
+        } catch (Exception ignored) {}
+    }
+
+    private void checkInternetAccess() {
+        new Thread(() -> {
+            boolean hasInternet = false;
+            try {
+                URL url = new URL("https://clients3.google.com/generate_204");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setUseCaches(false);
+                conn.setConnectTimeout(2000);
+                conn.setReadTimeout(2000);
+                conn.setRequestMethod("HEAD");
+                hasInternet = (conn.getResponseCode() == 204 || conn.getResponseCode() == 200);
+            } catch (Exception e) {
+                hasInternet = false;
+            }
+            final boolean isOnline = hasInternet;
+            if (isAdded() && getActivity() != null) {
+                getActivity().runOnUiThread(() -> {
+                    if (ledInternet != null) {
+                        if (isOnline) {
+                            ledInternet.setBackgroundResource(R.drawable.led_on_green);
+                            ledInternet.setBackgroundTintList(null);
+                        } else {
+                            ledInternet.setBackgroundResource(R.drawable.led_off);
+                            ledInternet.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336")));
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void loadLocalVarsFallback() {
+        File jsonFile = new File(sharedStateDir, "local_vars.json");
+        if (jsonFile.exists() && jsonFile.length() > 0) {
+            try {
+                StringBuilder text = new StringBuilder();
+                BufferedReader br = new BufferedReader(new FileReader(jsonFile));
+                String line;
+                while ((line = br.readLine()) != null) text.append(line);
+                br.close();
+                lastKnownState = new JSONObject(text.toString());
+                verifyInstallationState(lastKnownState);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private void refreshDashboardLeds(MainActivity mainAct) {
+        if (mainAct == null) return;
+        boolean isDevModeOn = false;
+        try {
+            isDevModeOn = android.provider.Settings.Global.getInt(
+                    requireContext().getContentResolver(),
+                    android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0;
+        } catch (Exception ignored) {}
+        if (ledDevMode != null) ledDevMode.setBackgroundResource(isDevModeOn ? R.drawable.led_on_green : R.drawable.led_off);
+    }
+
     private float parseCpuUsage(String cpuLine) {
         try {
             java.util.regex.Pattern p = java.util.regex.Pattern.compile("(\\d+)%cpu.*?(\\d+)%idle");
@@ -1485,8 +2197,10 @@ public class DeployFragment extends Fragment {
                 float idleCpu = Float.parseFloat(m.group(2));
                 if (totalCpu > 0) return ((totalCpu - idleCpu) / totalCpu) * 100f;
             }
-        } catch (Exception ignored) {
-        }
+        } catch (Exception ignored) {}
         return -1f;
     }
+
+    private void requestFreshLocalVars() { fetchLocalVarsFromPRoot(); }
+    private void requestFreshLocalVarsSilently() { fetchLocalVarsFromPRoot(); }
 }
