@@ -338,7 +338,7 @@ install_iiaboa_dashboard() {
   log "Setting up Node.js environment..."
   if is_32bits; then
     log "32-bit architecture detected. Avoiding NPM due to PRoot syscall bugs."
-    apt-get install -y nodejs
+    apt-get install -y nodejs node-gyp
 
     log "Downloading and installing Yarn directly..."
     mkdir -p /opt/yarn
@@ -520,4 +520,6 @@ if [ -d "/sdcard/.iiab_state" ]; then
 fi
 touch /usr/local/pdsm/flag_install_ready 2>/dev/null || true
 ok "Notified Android Controller: IIAB is ready."
-warn "Don't forget to stop running services (pdsm stop) before login out."
+warn "Don't forget to stop running services:"
+warn "  pdsm stop"
+warn "before login out."
