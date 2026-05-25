@@ -11,6 +11,8 @@ package org.iiab.controller;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 
 import androidx.annotation.NonNull;
@@ -27,7 +29,6 @@ public class BiometricHelper {
     // This is the "phone line" that tells the caller the result
     public interface AuthCallback {
         void onSuccess();
-
         void onFailed(); // Added failure/cancellation callback
     }
 
@@ -69,35 +70,55 @@ public class BiometricHelper {
         });
     }
 
-    // NEW IMPLEMENTATION: Handles both Success and Failure
+    // NEW IMPLEMENTATION: Handles both Success and Failure robustly
     public static void prompt(AppCompatActivity activity, String title, String subtitle, AuthCallback callback) {
-        Executor executor = ContextCompat.getMainExecutor(activity);
-        BiometricPrompt biometricPrompt = new BiometricPrompt(activity, executor, new BiometricPrompt.AuthenticationCallback() {
-            @Override
-            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
-                super.onAuthenticationSucceeded(result);
-                if (callback != null) callback.onSuccess();
-            }
-
-            @Override
-            public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
-                super.onAuthenticationError(errorCode, errString);
-                // Triggered if the user cancels, clicks outside, or fails too many times
-                if (callback != null) callback.onFailed();
-            }
-        });
-
-        int auth = BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
+        int tempAuth = BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            auth = BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
+            tempAuth = BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
         }
 
-        BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setSubtitle(subtitle)
-                .setAllowedAuthenticators(auth)
-                .build();
+        final int finalAuth = tempAuth;
 
-        biometricPrompt.authenticate(promptInfo);
+        // 1. PRE-CHECK: Auto-fail if the device has no security, avoiding 30s hangs in Bash
+        BiometricManager bm = BiometricManager.from(activity);
+        if (bm.canAuthenticate(finalAuth) != BiometricManager.BIOMETRIC_SUCCESS) {
+            if (callback != null) callback.onFailed();
+            return;
+        }
+
+        // 2. DELAY HACK: Give the window manager 150ms to stabilize after receiving the broadcast.
+        // This prevents BiometricPrompt from silently aborting if the keyboard or BottomSheet is shifting.
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                Executor executor = ContextCompat.getMainExecutor(activity);
+                BiometricPrompt biometricPrompt = new BiometricPrompt(activity, executor, new BiometricPrompt.AuthenticationCallback() {
+                    @Override
+                    public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                        super.onAuthenticationSucceeded(result);
+                        if (callback != null) callback.onSuccess();
+                    }
+
+                    @Override
+                    public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                        super.onAuthenticationError(errorCode, errString);
+                        // Triggered if user cancels, clicks outside, or fails too many times
+                        if (callback != null) callback.onFailed();
+                    }
+
+                    // NOTE: We do NOT override onAuthenticationFailed() here.
+                    // If it fails (e.g. wrong finger), the system UI shakes and lets them try again.
+                });
+
+                BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                        .setTitle(title)
+                        .setSubtitle(subtitle)
+                        .setAllowedAuthenticators(finalAuth)
+                        .build();
+
+                biometricPrompt.authenticate(promptInfo);
+            } catch (Exception e) {
+                if (callback != null) callback.onFailed();
+            }
+        }, 300);
     }
 }

@@ -183,37 +183,82 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     File rootfsDir = new File(getFilesDir(), "rootfs/installed-rootfs/iiab");
                     createFakeSysData(rootfsDir);
                     break;
-                case "org.iiab.ACTION_UNLOCK_SDCARD":
-                    File prootTmp = new File(getFilesDir(), "proot_tmp");
-
-                    // We must prompt on the main UI thread
-                    runOnUiThread(() -> {
-                        BiometricHelper.prompt(MainActivity.this,
-                                getString(R.string.terminal_auth_title),
-                                getString(R.string.terminal_auth_subtitle),
-                                new BiometricHelper.AuthCallback() {
-                                    @Override
-                                    public void onSuccess() {
-                                        // SUCCESS: Write the success flag
-                                        try {
-                                            new File(prootTmp, ".auth_success").createNewFile();
-                                            addToLog(getString(R.string.log_cli_sdcard_granted));
-                                        } catch (Exception ignored) {
-                                        }
-                                    }
-
-                                    @Override
-                                    public void onFailed() {
-                                        // FAILURE/CANCEL: Write the failure flag
-                                        try {
-                                            new File(prootTmp, ".auth_failed").createNewFile();
-                                            addToLog(getString(R.string.log_cli_sdcard_denied));
-                                        } catch (Exception ignored) {
-                                        }
-                                    }
-                                });
-                    });
-                    break;
+//                case "org.iiab.ACTION_UNLOCK_SDCARD":
+//                    File prootTmp = new File(getFilesDir(), "proot_tmp");
+//
+//                    runOnUiThread(() -> {
+//                        // 1. Ocultar físicamente la ventana de la terminal (BottomSheet)
+//                        // Esto mata CUALQUIER intento nativo de Termux de robar el foco o el teclado.
+//                        View bottomSheet = findViewById(R.id.terminal_bottom_sheet);
+//                        if (bottomSheet != null && bottomSheetBehavior != null) {
+//                            bottomSheetBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_HIDDEN);
+//                        }
+//
+//                        // 2. Por si acaso, quitar cualquier foco residual a nivel Java
+//                        if (terminalView != null) {
+//                            terminalView.setFocusable(false);
+//                            terminalView.setFocusableInTouchMode(false);
+//                            terminalView.clearFocus();
+//                            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+//                            if (imm != null) imm.hideSoftInputFromWindow(terminalView.getWindowToken(), 0);
+//                        }
+//
+//                        // Opcional: confirmación visual en Java
+//                        Toast.makeText(MainActivity.this, "Biometric Requested by Shell", Toast.LENGTH_SHORT).show();
+//
+//                        // 3. Lanzar la huella (con la terminal ya fuera del camino, Android tendrá la pantalla limpia)
+//                        BiometricHelper.prompt(MainActivity.this,
+//                                getString(R.string.terminal_auth_title),
+//                                getString(R.string.terminal_auth_subtitle),
+//                                new BiometricHelper.AuthCallback() {
+//                                    @Override
+//                                    public void onSuccess() {
+//                                        try {
+//                                            new File(prootTmp, ".auth_success").createNewFile();
+//                                            addToLog(getString(R.string.log_cli_sdcard_granted));
+//                                        } catch (Exception ignored) {
+//                                        } finally {
+//                                            restoreTerminalView();
+//                                        }
+//                                    }
+//
+//                                    @Override
+//                                    public void onFailed() {
+//                                        try {
+//                                            new File(prootTmp, ".auth_failed").createNewFile();
+//                                            addToLog(getString(R.string.log_cli_sdcard_denied));
+//                                        } catch (Exception ignored) {
+//                                        } finally {
+//                                            restoreTerminalView();
+//                                        }
+//                                    }
+//
+//                                    // Método auxiliar para regresar todo a la normalidad
+//                                    private void restoreTerminalView() {
+//                                        // A. Restaurar el comportamiento de foco
+//                                        if (terminalView != null) {
+//                                            terminalView.setFocusable(true);
+//                                            terminalView.setFocusableInTouchMode(true);
+//                                        }
+//
+//                                        // B. Volver a abrir el BottomSheet al 100% de la pantalla
+//                                        if (bottomSheet != null && bottomSheetBehavior != null) {
+//                                            // Fuerza la visibilidad por si acaso
+//                                            if (bottomSheet.getVisibility() != View.VISIBLE) {
+//                                                bottomSheet.setVisibility(View.VISIBLE);
+//                                            }
+//                                            bottomSheet.bringToFront();
+//                                            bottomSheetBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+//
+//                                            // C. Devolver el foco a la terminal una vez que ya esté abierta
+//                                            new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+//                                                if (terminalView != null) terminalView.requestFocus();
+//                                            }, 300); // Darle tiempo a la animación de expansión
+//                                        }
+//                                    }
+//                                });
+//                    });
+//                    break;
             }
         }
     };
@@ -742,7 +787,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         cliFilter.addAction("org.iiab.ACTION_BACKUP_ROOTFS");
         cliFilter.addAction("org.iiab.ACTION_RESTORE_ROOTFS");
         cliFilter.addAction("org.iiab.ACTION_PREPARE_ROOTFS");
-        cliFilter.addAction("org.iiab.ACTION_UNLOCK_SDCARD");
+//        cliFilter.addAction("org.iiab.ACTION_UNLOCK_SDCARD");
 
         // cliReceiver MUST be exported to receive commands from the system's 'am' binary
         ContextCompat.registerReceiver(this, cliReceiver, cliFilter, ContextCompat.RECEIVER_EXPORTED);
@@ -1513,31 +1558,31 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 cliStr.append("do_login() {\n");
                 cliStr.append("    echo -e '\\033[32mPreparing IIAB Debian Environment...\\033[0m'\n");
 
-                // --- SECURITY CHECK FOR SDCARD ---
-                cliStr.append("    if [ \"$MOUNT_SDCARD\" = true ]; then\n");
-                cliStr.append("        echo -e '\\033[33m[Security] Requesting biometric unlock for SD Card access...\\033[0m'\n");
-                cliStr.append("        # Clean previous flags\n");
-                cliStr.append("        rm -f \"$PROOT_TMP_DIR/.auth_success\" \"$PROOT_TMP_DIR/.auth_failed\"\n");
-                cliStr.append("        # Trigger UI Authentication\n");
-                cliStr.append("        am broadcast -a org.iiab.ACTION_UNLOCK_SDCARD -p org.iiab.controller >/dev/null 2>&1\n");
-                cliStr.append("        \n");
-                cliStr.append("        # Wait for Java to write the result flag (Timeout after 30s)\n");
-                cliStr.append("        WAIT_TIME=0\n");
-                cliStr.append("        while [ ! -f \"$PROOT_TMP_DIR/.auth_success\" ] && [ ! -f \"$PROOT_TMP_DIR/.auth_failed\" ]; do\n");
-                cliStr.append("            sleep 1\n");
-                cliStr.append("            WAIT_TIME=$((WAIT_TIME + 1))\n");
-                cliStr.append("            if [ $WAIT_TIME -ge 30 ]; then\n");
-                cliStr.append("                echo -e '\\033[31m[Error] Authentication timed out.\\033[0m'\n");
-                cliStr.append("                exit 1\n");
-                cliStr.append("            fi\n");
-                cliStr.append("        done\n");
-                cliStr.append("        \n");
-                cliStr.append("        if [ -f \"$PROOT_TMP_DIR/.auth_failed\" ]; then\n");
-                cliStr.append("            echo -e '\\033[31m[Error] Authentication failed or cancelled. Access denied.\\033[0m'\n");
-                cliStr.append("            exit 1\n");
-                cliStr.append("        fi\n");
-                cliStr.append("        echo -e '\\033[32m[Success] SD Card access granted.\\033[0m'\n");
-                cliStr.append("    fi\n\n");
+//                // --- SECURITY CHECK FOR SDCARD ---
+//                cliStr.append("    if [ \"$MOUNT_SDCARD\" = true ]; then\n");
+//                cliStr.append("        echo -e '\\033[33m[Security] Requesting biometric unlock for SD Card access...\\033[0m'\n");
+//                cliStr.append("        # Clean previous flags\n");
+//                cliStr.append("        rm -f \"$PROOT_TMP_DIR/.auth_success\" \"$PROOT_TMP_DIR/.auth_failed\"\n");
+//                cliStr.append("        # Trigger UI Authentication\n");
+//                cliStr.append("        am broadcast --user 0 -a org.iiab.ACTION_UNLOCK_SDCARD -p org.iiab.controller >/dev/null 2>&1\n");
+//                cliStr.append("        \n");
+//                cliStr.append("        # Wait for Java to write the result flag (Timeout after 30s)\n");
+//                cliStr.append("        WAIT_TIME=0\n");
+//                cliStr.append("        while [ ! -f \"$PROOT_TMP_DIR/.auth_success\" ] && [ ! -f \"$PROOT_TMP_DIR/.auth_failed\" ]; do\n");
+//                cliStr.append("            sleep 1\n");
+//                cliStr.append("            WAIT_TIME=$((WAIT_TIME + 1))\n");
+//                cliStr.append("            if [ $WAIT_TIME -ge 30 ]; then\n");
+//                cliStr.append("                echo -e '\\033[31m[Error] Authentication timed out.\\033[0m'\n");
+//                cliStr.append("                exit 1\n");
+//                cliStr.append("            fi\n");
+//                cliStr.append("        done\n");
+//                cliStr.append("        \n");
+//                cliStr.append("        if [ -f \"$PROOT_TMP_DIR/.auth_failed\" ]; then\n");
+//                cliStr.append("            echo -e '\\033[31m[Error] Authentication failed or cancelled. Access denied.\\033[0m'\n");
+//                cliStr.append("            exit 1\n");
+//                cliStr.append("        fi\n");
+//                cliStr.append("        echo -e '\\033[32m[Success] SD Card access granted.\\033[0m'\n");
+//                cliStr.append("    fi\n\n");
 
                 // 1. Calculate native Android btime & uptime directly in Bash
                 cliStr.append("    up_sec=$(awk '{print $1}' /proc/uptime 2>/dev/null || echo 1000)\n");

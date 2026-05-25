@@ -1792,7 +1792,7 @@ public class DeployFragment extends Fragment {
             // 1. We load the native icon
             android.graphics.drawable.Drawable importIcon = ContextCompat.getDrawable(requireContext(), android.R.drawable.stat_sys_download);
             if (importIcon != null) {
-                importIcon.setTint(Color.parseColor("#4CAF50"));
+                importIcon.setTint(Color.parseColor("#66BB6A"));
                 btnImportBackup.setCompoundDrawablesWithIntrinsicBounds(importIcon, null, null, null);
                 btnImportBackup.setCompoundDrawablePadding(24);
 
@@ -1892,9 +1892,9 @@ public class DeployFragment extends Fragment {
 
                         // EXPORT BUTTON
                         android.widget.ImageButton btnExport = new android.widget.ImageButton(requireContext());
-                        btnExport.setImageResource(android.R.drawable.ic_menu_upload_you_tube);
+                        btnExport.setImageResource(android.R.drawable.stat_sys_upload);
                         btnExport.setBackgroundColor(Color.TRANSPARENT);
-                        btnExport.setColorFilter(Color.parseColor("#4CAF50"));
+                        btnExport.setColorFilter(Color.parseColor("#66BB6A"));
                         btnExport.setPadding(iconPadding, iconPadding, iconPadding, iconPadding);
 
                         btnExport.setOnClickListener(btn -> {
