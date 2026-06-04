@@ -459,6 +459,12 @@ cat <<EOF >> "$MANIFEST_FILE"
 }
 EOF
 
+# ===================================================================
+# 9. FIX WEB SERVER PERMISSIONS
+# ===================================================================
+echo ">> [IIAB] Fixing permissions for web server access..."
+sudo chmod -R 755 "$OUTPUT_DIR"
+
 echo ">> [IIAB] Assets prepared successfully!"
 echo "==================================================================="
 echo "STATIC BUILD SUCCESSFUL!"
