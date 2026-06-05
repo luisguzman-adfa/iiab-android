@@ -38,7 +38,7 @@ jobs:
         cd ${{ github.workspace }}/termux-artifacts
         zip -r ../termux-binaries-latest.zip .
 
-- name: Generate dynamic tag (date & time)
+    - name: Generate dynamic tag (date & time)
       run: echo "TAG_NAME=binaries-$(date +'%Y-%m-%d_%H-%M')" >> $GITHUB_ENV
 
     - name: Publish rolling release
