@@ -43,20 +43,22 @@ jobs:
 
     steps:
       - name: Set up QEMU for ARM emulation
-        # Fix how the condition is evaluated here natively. No ${{ }} needed.
         if: github.event_name != 'workflow_dispatch' || inputs.tier_size == 'all' || inputs.tier_size == matrix.tier
         uses: docker/setup-qemu-action@v3
 
-      - name: Download Clean Debian Base
+      - name: Download and prepare clean Debian base
         if: github.event_name != 'workflow_dispatch' || inputs.tier_size == 'all' || inputs.tier_size == matrix.tier
         run: |
           wget https://iiab.switnet.org/android/rootfs/proot-distro-v4.29.0/debian-trixie-${{ matrix.arch.debian }}-pd-v4.29.0.tar.xz
-          xz -d debian-trixie-${{ matrix.arch.debian }}-pd-v4.29.0.tar.xz
+          mkdir rootfs
+          # Extract the tarball, stripping the parent directory to expose /bin, /etc, etc., at the root
+          tar --exclude='*/dev/*' --strip-components=1 -xf debian-trixie-${{ matrix.arch.debian }}-pd-v4.29.0.tar.xz -C rootfs
 
       - name: Create Docker Image from Base
         if: github.event_name != 'workflow_dispatch' || inputs.tier_size == 'all' || inputs.tier_size == matrix.tier
+        # Dynamically package the rootfs folder directly into Docker using the correct platform
         run: |
-          cat debian-trixie-${{ matrix.arch.debian }}-pd-v4.29.0.tar | docker import --platform ${{ matrix.arch.docker }} - debian-iiab-base:trixie
+          tar -cC rootfs . | docker import --platform ${{ matrix.arch.docker }} - debian-iiab-base:trixie
 
       - name: Run IIAB-oA Installer inside Emulator (Grab a coffee ☕)
         if: github.event_name != 'workflow_dispatch' || inputs.tier_size == 'all' || inputs.tier_size == matrix.tier
