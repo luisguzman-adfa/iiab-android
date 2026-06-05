@@ -1,10 +1,10 @@
 {
-  "build_date": "2026-05-23T10:40:40Z",
+  "build_date": "2026-06-05T11:47:09Z",
   "builder_info": "IIAB build_static.sh",
   "binaries": {
     "arm64-v8a": {
       "libaria2c.so": {
-        "sha256": "cb3713f7be43305a96d45b69b53212e143043af0903507bbccd4cc77969f5975",
+        "sha256": "c2b5af611017238f62d90b8473621d9a184569a05198c59d069c41d4e0e98bad",
         "size_bytes": 8592288
       }
       ,
@@ -14,8 +14,8 @@
       }
       ,
       "libless.so": {
-        "sha256": "cd6db1638cdb2e6b9b9a6a58432fed7223ad308949e39853b436a569729da45c",
-        "size_bytes": 1065016
+        "sha256": "50a5b8d19c3c47f8bbf2410a9047110c04c7a99159595bada23062e0731baf73",
+        "size_bytes": 1071000
       }
       ,
       "libnano.so": {
@@ -34,13 +34,13 @@
       }
       ,
       "libproot.so": {
-        "sha256": "6c420e521e6afc88b67a3c2e42921ebd738fd45c3070f9fa4dbdc2a3dca90a41",
-        "size_bytes": 493024
+        "sha256": "9e58477f2fbec6ff8a762d92c886107325b588fd6041cf69bda56ff8df501bf6",
+        "size_bytes": 515328
       }
       ,
       "librsync.so": {
-        "sha256": "f57cfeaa40df1c70b06d1b6cff3fdc5612ea9aa67f897eda12ef9b46ced66203",
-        "size_bytes": 1990784
+        "sha256": "19c9ada822f12a1d82dc2f33b5ba8661d1e84f308f3d1cc5c28338700667034e",
+        "size_bytes": 2000800
       }
       ,
       "libtar.so": {
@@ -56,7 +56,7 @@
     ,
     "armeabi-v7a": {
       "libaria2c.so": {
-        "sha256": "d1f664305838a9b69970558ddb1f24fad5308d2d12f7ec29142fe992137e27be",
+        "sha256": "201d047b9c5ef01f0ae9e52bd7ac29ff237114f86233c414c4305bd6e6658499",
         "size_bytes": 4839272
       }
       ,
@@ -66,8 +66,8 @@
       }
       ,
       "libless.so": {
-        "sha256": "ad06abc26a522d43df975103780ff4e661e2e5fbfcb5b82b31a5bfa5d96b26e8",
-        "size_bytes": 782024
+        "sha256": "36b34881fdc1ba9a76460e0d8c7e8c1bcecd27f8d56e318b3b7715b1172050d9",
+        "size_bytes": 786248
       }
       ,
       "libnano.so": {
@@ -81,13 +81,13 @@
       }
       ,
       "libproot.so": {
-        "sha256": "a381502f1b6d76332e2f94cc0c988bb7bf4953da02045299ac113e5c6a0f04c2",
-        "size_bytes": 314272
+        "sha256": "196eebc903344298183cd2d863f0f8991f5628e870e5d044d1daf4b2e110b591",
+        "size_bytes": 330240
       }
       ,
       "librsync.so": {
-        "sha256": "2c27945874d7544f127dd965e7f49f74c26053c2efba38b8008bf0894b787ce4",
-        "size_bytes": 1645016
+        "sha256": "856299c4f9664b06c4a7682d6c7d131dc7fed6cdad5761828b40f1e849857698",
+        "size_bytes": 1652472
       }
       ,
       "libtar.so": {
@@ -96,8 +96,8 @@
       }
       ,
       "libxz.so": {
-        "sha256": "24360681f10c098436234ae2473c32337c349f4b140c83d45e4c2277bb5166fc",
-        "size_bytes": 153244
+        "sha256": "308aa236226f01732aa848079b6f2930549a8e2e7d2d62cdb29343fa08417c09",
+        "size_bytes": 152932
       }
     }
   }
