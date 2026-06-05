@@ -1,10 +1,10 @@
 {
-  "build_date": "2026-06-05T11:47:09Z",
+  "build_date": "2026-06-05T14:38:54Z",
   "builder_info": "IIAB build_static.sh",
   "binaries": {
     "arm64-v8a": {
       "libaria2c.so": {
-        "sha256": "c2b5af611017238f62d90b8473621d9a184569a05198c59d069c41d4e0e98bad",
+        "sha256": "86343172a63f66857a915bf165846af7df44ce02296b884fa1a0cccac79c18d6",
         "size_bytes": 8592288
       }
       ,
@@ -56,7 +56,7 @@
     ,
     "armeabi-v7a": {
       "libaria2c.so": {
-        "sha256": "201d047b9c5ef01f0ae9e52bd7ac29ff237114f86233c414c4305bd6e6658499",
+        "sha256": "9978e5d62adf8872bfdd5133a07cc8a1f14e5af4dafe11b7afffd4171411a7c7",
         "size_bytes": 4839272
       }
       ,

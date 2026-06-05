@@ -153,57 +153,94 @@ dependencies {
 import groovy.json.JsonSlurper
 
 // =========================================================
-// IIAB SUPPLY CHAIN HOOK (CLOUD ARTIFACTS SYNC)
+// IIAB SUPPLY CHAIN HOOK (GITHUB RELEASES SYNC)
 // =========================================================
 task syncNativeArtifacts {
-    description = 'Downloads native binaries and configuration from IIAB public artifacts server'
+    description = 'Downloads and extracts rolling native binaries from GitHub Releases'
 
-    // The public URL where your artifacts are hosted
-    def baseUrl = "https://iiab.switnet.org/android/termux-artifacts"
-    def jniLibsDir = file("src/main/jniLibs")
+    // Repo name
+    def repoName = "appdevforall/iiab-android"
+
+    // Work Directories
     def assetsDir = file("src/main/assets")
+    def jniLibsDir = file("src/main/jniLibs")
+    def zipFile = file("${buildDir}/termux-binaries-latest.zip")
+    def unzipDir = file("${buildDir}/temp_artifacts")
+    def tagTrackerFile = file("src/main/assets/current_binaries_tag.txt")
 
     doLast {
-        println ">> [IIAB Hook] Fetching latest artifacts from ${baseUrl}..."
-
-        // Ensure destination directories exist
-        if (!assetsDir.exists()) assetsDir.mkdirs()
-
-        def manifestFile = new File(assetsDir, "ninja_manifest.json")
-        def certFile = new File(assetsDir, "cacert.pem")
+        println ">> [IIAB Hook] Querying GitHub API for latest rolling release..."
 
         try {
-            // 1. Download Manifest and Certificates
-            println "   -> Fetching ninja_manifest.json and cacert.pem..."
-            ant.get(src: "${baseUrl}/ninja_manifest.json", dest: manifestFile, skipexisting: false)
-            ant.get(src: "${baseUrl}/cacert.pem", dest: certFile, skipexisting: false)
+            // Ensure assets directory exists
+            if (!assetsDir.exists()) assetsDir.mkdirs()
 
-            // 2. Parse Manifest
-            def slurper = new JsonSlurper()
-            def manifest = slurper.parse(manifestFile)
+            // 1. Fetch Releases from GitHub API
+            def apiUrl = new URL("https://api.github.com/repos/${repoName}/releases")
+            def connection = (HttpURLConnection) apiUrl.openConnection()
+            connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
 
-            // 3. Download Binaries dynamically based on the manifest
-            manifest.binaries.each { arch, files ->
-                def targetArchDir = new File(jniLibsDir, arch)
-                if (!targetArchDir.exists()) targetArchDir.mkdirs()
-
-                files.each { fileName, fileInfo ->
-                    def targetFile = new File(targetArchDir, fileName)
-                    def downloadUrl = "${baseUrl}/jniLibs/${arch}/${fileName}"
-
-                    // 4. Smart Caching: Check if file exists and matches the byte size from the manifest
-                    if (targetFile.exists() && targetFile.length() == fileInfo.size_bytes) {
-                        println "   -> [CACHED] ${arch}/${fileName}"
-                    } else {
-                        println "   -> [DOWNLOADING] ${arch}/${fileName}..."
-                        ant.get(src: downloadUrl, dest: targetFile, skipexisting: false)
-                    }
-                }
+            if (connection.responseCode != 200) {
+                throw new GradleException("GitHub API returned error: ${connection.responseCode}")
             }
-            println ">> [IIAB Hook] Successfully synced all native artifacts from the network!"
+
+            def slurper = new JsonSlurper()
+            def releases = slurper.parse(connection.inputStream)
+
+            // 2. Find the newest release that starts with 'binaries-'
+            def latestRelease = releases.find { it.tag_name.startsWith('binaries-') }
+            if (latestRelease == null) {
+                throw new GradleException("No rolling releases found with tag 'binaries-'")
+            }
+
+            // 3. Smart Caching: Skip if we already have this exact release!
+            def currentTag = tagTrackerFile.exists() ? tagTrackerFile.text.trim() : ""
+            if (currentTag == latestRelease.tag_name) {
+                println "   -> [CACHED] Artifacts are up to date (${currentTag}). Skipping download."
+                return // Exits the task immediately, saving time!
+            }
+
+            // 4. Find the zip asset URL
+            def zipAsset = latestRelease.assets.find { it.name == 'termux-binaries-latest.zip' }
+            if (zipAsset == null) {
+                throw new GradleException("Zip asset not found in release ${latestRelease.tag_name}")
+            }
+
+            println "   -> Found new binaries: ${latestRelease.tag_name}"
+            println "   -> Downloading ZIP (approx ~15MB)..."
+
+            // 5. Download the ZIP to the build/ directory
+            if (!zipFile.parentFile.exists()) zipFile.parentFile.mkdirs()
+            ant.get(src: zipAsset.browser_download_url, dest: zipFile, skipexisting: false)
+
+            // 6. Extract the ZIP to a temporary folder
+            println "   -> Extracting binaries..."
+            if (unzipDir.exists()) unzipDir.deleteDir() // Clean temp folder
+            copy {
+                from zipTree(zipFile)
+                into unzipDir
+            }
+
+            // 7. Route the files to their correct Android folders
+            // Move jniLibs/*.so to src/main/jniLibs
+            copy {
+                from "${unzipDir}/jniLibs"
+                into jniLibsDir
+            }
+            // Move the config/manifest files to src/main/assets
+            copy {
+                from unzipDir
+                include "cacert.pem", "ninja_manifest.json"
+                into assetsDir
+            }
+
+            // 8. Update our local tracker file with the new tag
+            tagTrackerFile.text = latestRelease.tag_name
+
+            println ">> [IIAB Hook] Successfully synced and extracted native artifacts!"
 
         } catch (Exception e) {
-            System.err.println ">> [IIAB Hook] ERROR: Failed to sync artifacts from ${baseUrl}"
+            System.err.println ">> [IIAB Hook] ERROR: Failed to sync artifacts from GitHub"
             System.err.println ">> [IIAB Hook] Details: ${e.message}"
             // Throwing the exception ensures the build fails if critical binaries are missing
             throw new GradleException("Artifact sync failed", e)
