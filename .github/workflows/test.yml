@@ -1,0 +1,77 @@
+name: Bake IIAB RootFS (Native Android Emulator)
+
+on:
+  workflow_dispatch: # Para lanzarlo a mano
+  push:
+    branches: [ "ci-experimentos" ]
+
+jobs:
+  bake-image:
+    # LA MAGIA: macos-14 garantiza un procesador M1 (ARM64)
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 1. Necesitas descargar o tener disponible el APK de tu app
+      # (Asumiendo que tienes un paso previo que lo compila o lo descargas)
+      - name: Descargar APK compilado
+        run: |
+          wget -qO app-debug.apk https://iiab.switnet.org/android/apk/org.iiab.controller-v0.3.6.2beta-arm64-v8a-release.apk
+          # O usa actions/download-artifact si lo compilas en el mismo workflow
+
+      # 2. Levantar el Emulador e instalar la App
+      - name: Run Android Emulator & Execute
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34           # Android 14
+          target: default         # Imagen limpia sin Google Play (más rápida)
+          arch: arm64-v8a         # Arquitectura nativa ARM
+          profile: pixel_6        # Perfil de hardware
+          force-avd-creation: false
+          disable-animations: true
+          # Este es el script que correrá DENTRO de la sesión del emulador activo
+          script: |
+            echo ">> Instalando la aplicación IIAB..."
+            adb install -t app-debug.apk
+
+            echo ">> Dando permisos necesarios (si los requiere sin abrir la UI)..."
+            # adb shell pm grant org.iiab.controller android.permission.POST_NOTIFICATIONS
+
+            echo ">> Lanzando el proceso de horneado (Broadcast)..."
+            adb shell am broadcast -a org.iiab.ACTION_BAKE_IMAGE -p org.iiab.controller
+
+            echo ">> Esperando a que termine el proceso (Monitoreando archivo)..."
+            # Como el broadcast es asíncrono, el CI debe esperar a que el archivo exista
+            # Hacemos un loop que revisa la carpeta cada 10 segundos
+            MAX_RETRIES=180 # 30 minutos de timeout máximo
+            COUNT=0
+            while [ $COUNT -lt $MAX_RETRIES ]; do
+              # Revisamos si el archivo ya existe en la carpeta de descargas del emulador
+              if adb shell ls /storage/emulated/0/Download/final_rootfs.tar.xz 2>/dev/null; then
+                echo ">> ¡ÉXITO! Archivo final encontrado."
+                break
+              fi
+              echo "Cocinando imagen... ($COUNT / $MAX_RETRIES) - Esperando 10s"
+              sleep 10
+              COUNT=$((COUNT+1))
+            done
+
+            if [ $COUNT -eq $MAX_RETRIES ]; then
+              echo "TIMEOUT: La imagen no se generó a tiempo."
+              # Opcional: imprimir el logcat para ver por qué falló
+              adb logcat -d | tail -n 100
+              exit 1
+            fi
+
+            echo ">> Extrayendo la imagen del emulador al runner de GitHub..."
+            adb pull /storage/emulated/0/Download/final_rootfs.tar.xz ./final_rootfs.tar.xz
+
+      # 3. Subir la imagen como artefacto de GitHub
+      - name: Subir RootFS Bakeado
+        uses: actions/upload-artifact@v4
+        with:
+          name: iiab-debian-rootfs
+          path: final_rootfs.tar.xz
+          retention-days: 5
