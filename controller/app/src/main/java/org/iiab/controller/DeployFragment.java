@@ -116,6 +116,10 @@ public class DeployFragment extends Fragment {
     // Native Engine Variables
     private static Aria2Manager aria2Manager;
     private static boolean isDownloadingRootfs = false;
+    // State Variables (New control variables)
+    private boolean isRestoring = false;
+    private boolean isDeleting = false;
+    private boolean isImporting = false;
     private PRootEngine prootEngine;
 
     // Background Handlers
@@ -591,27 +595,42 @@ public class DeployFragment extends Fragment {
             btnAdvancedForceStop.setOnClickListener(v -> openTermuxAppInfo());
         }
 
-        if (isServerRunning) {
-            // CASE A: Server Running (Lock UI)
-            float lockAlpha = 0.5f;
-            btnFastInstall.setAlpha(lockAlpha);
-            btnFastDelete.setAlpha(lockAlpha);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(lockAlpha);
-            if (btnAdvancedRestore != null) btnAdvancedRestore.setAlpha(lockAlpha);
-            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(lockAlpha);
-            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(lockAlpha);
+        boolean isBusy = isSystemBusy();
 
-            btnFastInstall.setText(R.string.install_btn_reinstall);
-            View.OnClickListener serverHot = v -> Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
-            btnFastInstall.setOnClickListener(serverHot);
-            btnFastDelete.setOnClickListener(serverHot);
-            if (btnAdvancedBackup != null) btnAdvancedBackup.setOnClickListener(serverHot);
-            if (btnAdvancedRestore != null) btnAdvancedRestore.setOnClickListener(serverHot);
-            if (btnAdvancedReset != null) btnAdvancedReset.setOnClickListener(serverHot);
-            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setOnClickListener(serverHot);
+        // 1. ALWAYS link the buttons so Listeners can intercept and drop the Snackbar
+        bindInstallButtonLogic(mainAct, debianRootfs, iiabRootDir);
+        bindDeleteButtonLogic(mainAct, debianRootfs);
+        bindBackupButtonLogic(mainAct, backupsDir, iiabRootDir);
+        bindResetButtonLogic(mainAct, debianRootfs);
+        bindBackupMenuLogic(backupsDir);
+        refreshRestoreButtonLogic();
+
+        if (isServerRunning || isBusy) {
+            // LOCK MODE: Server On or System Busy
+            float lockAlpha = 0.5f;
+
+            // We keep the opacity at 80% only for the button that is currently working
+            btnFastInstall.setAlpha((isDownloadingRootfs && !isServerRunning) ? 0.8f : lockAlpha);
+            btnFastDelete.setAlpha(isDeleting ? 0.8f : lockAlpha);
+            if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(isBackupInProgress ? 0.8f : lockAlpha);
+            if (btnAdvancedRestore != null) btnAdvancedRestore.setAlpha(isRestoring ? 0.8f : lockAlpha);
+            if (btnAdvancedReset != null) btnAdvancedReset.setAlpha((isDownloadingRootfs && !isServerRunning) ? 0.8f : lockAlpha);
+            if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(lockAlpha);
+            if (btnImportBackup != null) btnImportBackup.setAlpha(isImporting ? 0.8f : lockAlpha);
+
+            // Lock module checkboxes in the grid
+            for (CheckBox cb : newInstallCheckboxes) {
+                cb.setEnabled(false);
+                View card = (View) cb.getParent().getParent();
+                card.setAlpha(0.6f);
+                card.setOnClickListener(v -> {
+                    String msg = isServerRunning ? getString(R.string.install_msg_server_running_lock) : getSystemBusyMessage();
+                    Snackbar.make(v, msg, Snackbar.LENGTH_LONG).show();
+                });
+            }
 
         } else {
-            // CASE B: Server Offline (Enable UI)
+            // FREE MODE: All off and ready to operate
             if (selectedTier == null || !isStorageSafe) btnFastInstall.setAlpha(0.4f);
             else btnFastInstall.setAlpha(1.0f);
 
@@ -619,25 +638,19 @@ public class DeployFragment extends Fragment {
             if (btnAdvancedBackup != null) btnAdvancedBackup.setAlpha(1.0f);
             if (btnAdvancedReset != null) btnAdvancedReset.setAlpha(1.0f);
             if (txtSelectBackupTitle != null) txtSelectBackupTitle.setAlpha(1.0f);
-            refreshRestoreButtonLogic();
+            if (btnImportBackup != null) btnImportBackup.setAlpha(1.0f);
 
-            if (!isDownloadingRootfs) {
-                btnFastInstall.setEnabled(true);
-                btnFastInstall.setTextSize(14f);
-                if (isProotInstalled) btnFastInstall.setText(R.string.install_btn_reinstall);
-                else btnFastInstall.setText(R.string.install_btn_install);
-            } else {
-                btnFastInstall.setEnabled(true);
-                btnFastInstall.setTextSize(12f);
-                btnFastInstall.setAlpha(0.8f);
+            btnFastInstall.setEnabled(true);
+            btnFastInstall.setTextSize(14f);
+            btnFastInstall.setText(isProotInstalled ? R.string.install_btn_reinstall : R.string.install_btn_install);
+
+            // Unlock checkboxes
+            for (CheckBox cb : newInstallCheckboxes) {
+                cb.setEnabled(true);
+                View card = (View) cb.getParent().getParent();
+                card.setAlpha(1.0f);
+                card.setOnClickListener(v -> cb.toggle());
             }
-
-            // Bind native buttons
-            bindInstallButtonLogic(mainAct, debianRootfs, iiabRootDir);
-            bindDeleteButtonLogic(mainAct, debianRootfs);
-            bindBackupButtonLogic(mainAct, backupsDir, iiabRootDir);
-            bindResetButtonLogic(mainAct, debianRootfs);
-            bindBackupMenuLogic(backupsDir);
         }
     }
 
@@ -916,14 +929,13 @@ public class DeployFragment extends Fragment {
 
     private void bindInstallButtonLogic(MainActivity mainAct, File debianRootfs, File iiabRootDir) {
         btnFastInstall.setOnClickListener(v -> {
-            if (selectedTier == null) {
-                Snackbar.make(v, R.string.install_error_no_tier, Snackbar.LENGTH_LONG).show();
+            // 1. Main Lock: Server On
+            if (mainAct.isServerAlive) {
+                Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
                 return;
             }
-            if (!isStorageSafe) {
-                Snackbar.make(v, R.string.install_error_no_storage, Snackbar.LENGTH_LONG).show();
-                return;
-            }
+
+            // 2. HIGH PRIORITY: If this button is working, we allow cancel
             if (isDownloadingRootfs) {
                 new android.app.AlertDialog.Builder(requireContext())
                         .setTitle(getString(R.string.install_btn_cancel_title))
@@ -935,12 +947,30 @@ public class DeployFragment extends Fragment {
                             btnFastInstall.setText(R.string.install_btn_install);
                             btnFastInstall.setAlpha(1.0f);
                             Snackbar.make(getView(), R.string.install_msg_cancelled, Snackbar.LENGTH_SHORT).show();
+                            updateDynamicButtons();
                         })
                         .setNegativeButton(getString(R.string.cancel), null)
                         .show();
                 return;
             }
 
+            // 3. If it is not working, but the system is busy with something else: LOCK
+            if (isSystemBusy()) {
+                Snackbar.make(v, getSystemBusyMessage(), Snackbar.LENGTH_LONG).show();
+                return;
+            }
+
+            // 4. Normal installation startup validations
+            if (selectedTier == null) {
+                Snackbar.make(v, R.string.install_error_no_tier, Snackbar.LENGTH_LONG).show();
+                return;
+            }
+            if (!isStorageSafe) {
+                Snackbar.make(v, R.string.install_error_no_storage, Snackbar.LENGTH_LONG).show();
+                return;
+            }
+
+            // 5. Start the installation...
             Runnable executeDownload = () -> {
                 enableSystemProtection();
                 mainAct.invalidateModuleStateTrust();
@@ -1056,10 +1086,22 @@ public class DeployFragment extends Fragment {
 
     private void bindDeleteButtonLogic(MainActivity mainAct, File debianRootfs) {
         btnFastDelete.setOnClickListener(v -> {
+            if (mainAct.isServerAlive) {
+                Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
+                return;
+            }
+            if (isSystemBusy()) {
+                Snackbar.make(v, getSystemBusyMessage(), Snackbar.LENGTH_LONG).show();
+                return;
+            }
+
             new android.app.AlertDialog.Builder(requireContext())
                     .setTitle(R.string.install_dialog_delete_title)
                     .setMessage(R.string.install_dialog_delete_msg)
                     .setPositiveButton(R.string.install_btn_delete_confirm, (dialog, which) -> {
+                        isDeleting = true;
+                        mainAct.runOnUiThread(this::updateDynamicButtons);
+
                         mainAct.invalidateModuleStateTrust();
                         btnFastDelete.setEnabled(false);
                         Snackbar.make(getView(), R.string.install_status_deleting, Snackbar.LENGTH_SHORT).show();
@@ -1068,10 +1110,11 @@ public class DeployFragment extends Fragment {
                             try {
                                 Process p = Runtime.getRuntime().exec(new String[]{"rm", "-rf", debianRootfs.getAbsolutePath()});
                                 p.waitFor();
-                                mainAct.runOnUiThread(this::updateDynamicButtons);
                             } catch (Exception e) {
                                 mainAct.runOnUiThread(() -> Snackbar.make(getView(), getString(R.string.install_error_delete, e.getMessage()), Snackbar.LENGTH_LONG).show());
                             } finally {
+                                isDeleting = false;
+                                mainAct.runOnUiThread(this::updateDynamicButtons);
                                 disableSystemProtection();
                             }
                         }).start();
@@ -1085,42 +1128,15 @@ public class DeployFragment extends Fragment {
         if (btnAdvancedReset == null) return;
         btnAdvancedReset.setOnClickListener(v -> {
 
-            // 1. Safe Abortion Phase
-            if (isDownloadingRootfs) {
-                new android.app.AlertDialog.Builder(requireContext())
-                        .setTitle(getString(R.string.install_btn_cancel_title))
-                        .setMessage(getString(R.string.install_btn_cancel_msg))
-                        .setPositiveButton(getString(R.string.install_btn_cancel_confirm), (dialog, which) -> {
-                            if (aria2Manager != null) aria2Manager.stopDownload();
-                            disableSystemProtection();
-                            isDownloadingRootfs = false;
-
-                            // We clean the remains of the failed download if they exist
-                            String arch = getTermuxArch();
-                            String archSuffix = (arch.contains("arm") && !arch.contains("64")) ? "arm" : "aarch64";
-                            String tarball = "debian-trixie-" + archSuffix + "-pd-v4.29.0.tar.xz";
-                            File partialDownload = new File("/storage/emulated/0/Download", tarball);
-                            if (partialDownload.exists()) partialDownload.delete();
-                            File ariaState = new File("/storage/emulated/0/Download", tarball + ".aria2");
-                            if (ariaState.exists()) ariaState.delete();
-
-                            btnAdvancedReset.setText(getString(R.string.install_btn_reset));
-                            btnAdvancedReset.setEnabled(true);
-                            updateDynamicButtons();
-                            Snackbar.make(getView(), R.string.install_msg_cancelled, Snackbar.LENGTH_SHORT).show();
-                        })
-                        .setNegativeButton(R.string.cancel, null)
-                        .show();
+            if (mainAct.isServerAlive) {
+                Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
                 return;
             }
-
-            // 2. IF THE SYSTEM IS ALREADY DOING SOMETHING ELSE OR HAS ALREADY STARTED EXTRACTING
-            if (btnAdvancedReset.getText().toString().contains("Extract") || btnAdvancedReset.getText().toString().contains("Bootstrap")) {
-                Snackbar.make(getView(), "System extraction in progress. Please do not interrupt.", Snackbar.LENGTH_SHORT).show();
+            if (isSystemBusy()) {
+                Snackbar.make(v, getSystemBusyMessage(), Snackbar.LENGTH_LONG).show();
                 return;
             }
-
-            // 3. NORMAL STATE: RESET START
+            // NORMAL STATE: RESET START
             new android.app.AlertDialog.Builder(requireContext())
                     .setTitle(R.string.install_dialog_reset_title)
                     .setMessage(R.string.install_dialog_reset_msg)
@@ -1695,8 +1711,19 @@ public class DeployFragment extends Fragment {
 
         if (hasSelections) {
             btnLaunchInstall.setOnClickListener(v -> {
+                MainActivity mainAct = (MainActivity) getActivity();
+                if (mainAct != null && mainAct.isServerAlive) {
+                    Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+                if (isSystemBusy() && !isBatchInstalling) {
+                    Snackbar.make(v, getSystemBusyMessage(), Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+
                 isBatchInstalling = true;
                 saveQueueToPrefs();
+                updateDynamicButtons();
                 processNextInQueue();
             });
         } else {
@@ -1722,6 +1749,14 @@ public class DeployFragment extends Fragment {
     private void bindBackupButtonLogic(MainActivity mainAct, File backupsDir, File iiabRootDir) {
         if (btnAdvancedBackup == null) return;
         btnAdvancedBackup.setOnClickListener(v -> {
+            if (mainAct.isServerAlive) {
+                Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
+                return;
+            }
+            if (isSystemBusy() && !isBackupInProgress) {
+                Snackbar.make(v, getSystemBusyMessage(), Snackbar.LENGTH_LONG).show();
+                return;
+            }
             if (isBackupInProgress) {
                 new android.app.AlertDialog.Builder(requireContext())
                         .setTitle(getString(R.string.install_msg_backup_in_progress_title))
@@ -1989,11 +2024,24 @@ public class DeployFragment extends Fragment {
         } else {
             btnAdvancedRestore.setAlpha(1.0f);
             btnAdvancedRestore.setOnClickListener(v -> {
+                if (mainAct.isServerAlive) {
+                    Snackbar.make(v, R.string.install_msg_server_running_lock, Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+                if (isSystemBusy()) {
+                    Snackbar.make(v, getSystemBusyMessage(), Snackbar.LENGTH_LONG).show();
+                    return;
+                }
+
+                isRestoring = true;
+                updateDynamicButtons();
                 Snackbar.make(v, getString(R.string.install_msg_restore_starting, selectedBackupFile), Snackbar.LENGTH_SHORT).show();
                 mainAct.invalidateModuleStateTrust();
 
                 File backupFile = new File(new File(requireContext().getFilesDir(), "rootfs/backups"), selectedBackupFile);
                 if (!backupFile.exists()) {
+                    isRestoring = false;
+                    updateDynamicButtons();
                     Snackbar.make(v, R.string.install_error_backup_missing, Snackbar.LENGTH_SHORT).show();
                     return;
                 }
@@ -2008,6 +2056,7 @@ public class DeployFragment extends Fragment {
                     @Override
                     public void onComplete(String destDir) {
                         mainAct.runOnUiThread(() -> {
+                            isRestoring = false;
                             disableSystemProtection();
                             btnAdvancedRestore.setEnabled(true);
                             btnAdvancedRestore.setText(getString(R.string.install_btn_restore));
@@ -2019,6 +2068,7 @@ public class DeployFragment extends Fragment {
                     @Override
                     public void onError(String error) {
                         mainAct.runOnUiThread(() -> {
+                            isRestoring = false;
                             disableSystemProtection();
                             btnAdvancedRestore.setEnabled(true);
                             btnAdvancedRestore.setText(getString(R.string.install_btn_restore));
@@ -2032,6 +2082,8 @@ public class DeployFragment extends Fragment {
     }
 
     private void importBackupSafely(Uri sourceUri) {
+        isImporting = true;
+        updateDynamicButtons();
         btnImportBackup.setEnabled(false);
         btnImportBackup.setText(getString(R.string.install_msg_importing));
         Snackbar.make(getView(), getString(R.string.install_msg_importing), Snackbar.LENGTH_LONG).show();
@@ -2058,6 +2110,7 @@ public class DeployFragment extends Fragment {
 
                 if (getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
+                        isImporting = false;
                         btnImportBackup.setEnabled(true);
                         btnImportBackup.setText(getString(R.string.install_btn_import_backup));
                         selectedBackupFile = fileName;
@@ -2068,6 +2121,8 @@ public class DeployFragment extends Fragment {
             } catch (Exception e) {
                 if (getActivity() != null) {
                     getActivity().runOnUiThread(() -> {
+                        isImporting = false;
+                        updateDynamicButtons();
                         btnImportBackup.setEnabled(true);
                         btnImportBackup.setText(getString(R.string.install_btn_import_backup));
                         Snackbar.make(getView(), getString(R.string.install_msg_import_failed, e.getMessage()), Snackbar.LENGTH_LONG).show();
@@ -2484,6 +2539,20 @@ public class DeployFragment extends Fragment {
     // =========================================================================================
     // REGION 8: UTILITIES
     // =========================================================================================
+
+    private boolean isSystemBusy() {
+        return isDownloadingRootfs || isBatchInstalling || isBackupInProgress || isRestoring || isDeleting || isImporting;
+    }
+
+    private String getSystemBusyMessage() {
+        if (isDownloadingRootfs) return getString(R.string.install_busy_provisioning);
+        if (isBatchInstalling) return getString(R.string.install_busy_modules);
+        if (isBackupInProgress) return getString(R.string.install_busy_backup);
+        if (isRestoring) return getString(R.string.install_busy_restore);
+        if (isDeleting) return getString(R.string.install_busy_delete);
+        if (isImporting) return getString(R.string.install_busy_import);
+        return getString(R.string.install_busy_generic);
+    }
 
     private void enableSystemProtection() {
         // SAFE CHECK
