@@ -171,7 +171,7 @@
 
     <string name="battery_opt_denied">ऐप को 100% काम करने के लिए, कृपया बैटरी अनुकूलन को अक्षम करें।</string>
     <string name="battery_opt_msg">वॉचडॉग के विश्वसनीय रूप से काम करने के लिए, कृपया इस ऐप के लिए बैटरी अनुकूलन को अक्षम करें।</string>
-    <string name="battery_opt_oppo_extra">\n\nOPPO/Realme पहचाना गया: कृपया सुनिश्चित करें कि आप इस ऐप की सेटिंग्स में \'Allow background activity\' (पृष्ठभूमि गतिविधि की अनुमति दें) सक्षम करें।</string>
+    <string name="battery_opt_oppo_extra">\n\nOPPO/Realme पहचाना गया: कृपया सुनिश्चित करें कि आप इस ऐप की सेटिंग्स में \'Allow background activity\' (पृष्ठभूमि गतिविधि की अनुमति दें) सक्षम करें。</string>
     <string name="battery_opt_title">बैटरी अनुकूलन</string>
     <string name="battery_opt_xiaomi_extra">\n\nXiaomi पहचाना गया: कृपया सेटिंग्स में बैटरी सेवर को \'No restrictions\' (कोई प्रतिबंध नहीं) पर सेट करें।</string>
     <string name="go_to_settings">सेटिंग्स पर जाएं</string>
@@ -191,6 +191,7 @@
     <string name="download_title">IIAB Controller अपडेट हो रहा है</string>
     <string name="download_description">नया संस्करण डाउनलोड हो रहा है...</string>
     <string name="download_started_toast">डाउनलोड शुरू हुआ...</string>
+
     <string name="ota_toast_checking">अपडेट की जांच की जा रही है...</string>
     <string name="ota_toast_latest">आपके पास पहले से ही नवीनतम संस्करण स्थापित है।</string>
     <string name="ota_toast_error_server">सर्वर से संपर्क करने में त्रुटि (%1$d)</string>
@@ -323,7 +324,7 @@
     <string name="install_msg_export_success">निर्यात सफलतापूर्वक पूर्ण हुआ!</string>
     <string name="install_msg_export_failed">निर्यात विफल: %1$s</string>
 
-    <string name="install_msg_importing">बैकअप आयात किया जा रहा है... कृपया प्रतीक्षा करें।</string>
+    <string name="install_msg_importing">बैकअप आयात किया जा रहा है... कृपया प्रतीक्षा करें。</string>
     <string name="install_msg_import_success">बैकअप सफलतापूर्वक आयात किया गया!</string>
     <string name="install_msg_import_failed">आयात विफल: %1$s</string>
 
@@ -355,8 +356,12 @@
     <string name="adb_cp_unknown"><![CDATA[प्रक्रिया प्रतिबंध<br><b>(अज्ञात)</b>]]></string>
     <string name="adb_cp_not_required"><![CDATA[प्रक्रिया प्रतिबंध<br><small>(आवश्यक नहीं)</small>]]></string>
 
-    <string name="adb_snack_disabling_cp">प्रक्रिया प्रतिबंध अक्षम किए जा रहे हैं...</string>
-    <string name="adb_snack_setting_ppk">PPK सीमा 256 पर सेट की जा रही है...</string>
+    <string name="adb_req_cp">प्रक्रिया प्रतिबंध को जांचने या टॉगल करने के लिए, ADB का कनेक्ट होना आवश्यक है।</string>
+    <string name="adb_not_req_cp">प्रक्रिया प्रतिबंध सुधार केवल Android 14+ के लिए आवश्यक है।</string>
+    <string name="adb_req_ppk">फैंटम प्रोसेस किलर को जांचने या टॉगल करने के लिए, ADB का कनेक्ट होना आवश्यक है।</string>
+    <string name="adb_not_req_ppk">फैंटम प्रोसेस किलर सुधार केवल Android 12/13+ के लिए आवश्यक है।</string>
+    <string name="adb_snack_disabling_cp">प्रक्रिया प्रतिबंध सेट किया जा रहा है: अक्षम...</string>
+    <string name="adb_snack_setting_ppk">फैंटम प्रोसेस किलर सेट किया जा रहा है: 256...</string>
     <string name="adb_status_securing">कनेक्शन सुरक्षित किया जा रहा है...</string>
     <string name="adb_ui_checking_cp"><![CDATA[चाइल्ड प्रोसेस<br><i>(जांच की जा रही है...)</i>]]></string>
     <string name="adb_ui_checking_ppk"><![CDATA[PPK सीमा<br><i>(जांच की जा रही है...)</i>]]></string>
@@ -472,7 +477,17 @@
     <string name="sync_share_status_init">सर्वर शुरू हो रहा है...</string>
 
     <string name="tutorial_share_title">ट्रांसफर बनाम एक्सेस</string>
-    <string name="tutorial_share_heavy">शेयर सेक्शन में आपका स्वागत है! यहां आप पूरे IIAB सिस्टम (कई GB तक) को दूसरे डिवाइस पर क्लोन कर सकते हैं। इस प्रोसेस में घंटों लग सकते हैं, जो तुरंत शेयर एक्सेस जैसा नहीं है।</string>    <string name="tutorial_share_light">तुरंत एक्सेस चाहिए? ☝️\nअगर आप चाहते हैं कि दूसरे लोग तुरंत विकिपीडिया पढ़ें या मैप्स इस्तेमाल करें, तो सर्वर शुरू करें और QR कोड यहां शेयर करें!</string>
+    <string name="tutorial_share_heavy">शेयर सेक्शन में आपका स्वागत है! यहां आप पूरे IIAB सिस्टम (कई GB तक) को दूसरे डिवाइस पर क्लोन कर सकते हैं। इस प्रोसेस में घंटों लग सकते हैं, जो तुरंत शेयर एक्सेस जैसा नहीं है।</string>
+    <string name="tutorial_share_light">तुरंत एक्सेस चाहिए? ☝️\nअगर आप चाहते हैं कि दूसरे लोग तुरंत विकिपीडिया पढ़ें या मैप्स इस्तेमाल करें, तो सर्वर शुरू करें और QR कोड यहां शेयर करें!</string>
     <string name="tutorial_share_dont_show">फिर से न दिखाएं</string>
     <string name="tutorial_share_got_it">समझ गया!</string>
+
+    <string name="install_busy_provisioning">सिस्टम वर्तमान में प्रोविजन/रीसेट हो रहा है। कृपया प्रतीक्षा करें।</string>
+    <string name="install_busy_modules">वर्तमान में मॉड्यूल इंस्टॉल किए जा रहे हैं। कृपया प्रतीक्षा करें।</string>
+    <string name="install_busy_backup">बैकअप प्रगति पर है। कृपया प्रतीक्षा करें।</string>
+    <string name="install_busy_restore">सिस्टम वर्तमान में बैकअप से पुनर्स्थापित हो रहा है। कृपया प्रतीक्षा करें।</string>
+    <string name="install_busy_delete">सिस्टम वर्तमान में हटाया जा रहा है। कृपया प्रतीक्षा करें।</string>
+    <string name="install_busy_import">बैकअप आयात किया जा रहा है। कृपया प्रतीक्षा करें।</string>
+    <string name="install_busy_generic">सिस्टम वर्तमान में व्यस्त है। कृपया प्रतीक्षा करें।</string>
+
 </resources>

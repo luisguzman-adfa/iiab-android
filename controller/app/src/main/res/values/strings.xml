@@ -286,8 +286,13 @@
     <string name="adb_cp_unknown"><![CDATA[Processes Restriction<br><b>(Unknown)</b>]]></string>
     <string name="adb_cp_not_required"><![CDATA[Processes Restriction<br><small>(Not required)</small>]]></string>
 
-    <string name="adb_snack_disabling_cp">Disabling Processes Restrictions...</string>
-    <string name="adb_snack_setting_ppk">Setting PPK limit to 256...</string>
+    <string name="adb_req_cp">To check or toggle Process Restriction, ADB must be connected.</string>
+    <string name="adb_not_req_cp">Process Restriction fix is only required for Android 14+.</string>
+    <string name="adb_req_ppk">To check or toggle Phantom Process Killer, ADB must be connected.</string>
+    <string name="adb_not_req_ppk">Phantom Process Killer fix is only required for Android 12/13+.</string>
+    <string name="adb_snack_disabling_cp">Setting Process Restriction: Disabled...</string>
+    <string name="adb_snack_setting_ppk">Setting Phantom Process Killer: 256...</string>
+
     <string name="adb_status_securing">Securing connection...</string>
     <string name="adb_ui_checking_cp"><![CDATA[Child Process<br><i>(Checking...)</i>]]></string>
     <string name="adb_ui_checking_ppk"><![CDATA[PPK Limit<br><i>(Checking...)</i>]]></string>
@@ -438,7 +443,7 @@
     <string name="sync_dialog_conn_failed_title">Connection Failed</string>
     <string name="sync_dialog_conn_failed_msg">Cannot reach Host at %1$s.\nAre you sure you are connected to the same Wi-Fi network or Hotspot?</string>
 
-    <string name="sync_card_title_system">Share IIAB + Content</string>
+    <string name="sync_card_title_system">Send IIAB + Content</string>
     <string name="sync_card_desc_system">When both devices have the IIAB-oA Controller app, you can share the IIAB platform and all its content (from a few hundreds of MB to several GB).</string>
     <string name="sync_card_title_apk">Share IIAB-oA Controller app</string>
     <string name="sync_card_desc_apk">In order to use IIAB on Android, the other device needs the app first. This feature allows you to share it locally. No Internet required!</string>
@@ -489,4 +494,13 @@
     <string name="tutorial_share_light">Looking for instant access? ☝️\nIf you just want others to read Wikipedia or use Maps instantly, start the server and share the QR code up here!</string>
     <string name="tutorial_share_dont_show">Do not show again</string>
     <string name="tutorial_share_got_it">Got it!</string>
+
+    <string name="install_busy_provisioning">System is currently provisioning/resetting. Please wait.</string>
+    <string name="install_busy_modules">Modules are currently being installed. Please wait.</string>
+    <string name="install_busy_backup">A backup is in progress. Please wait.</string>
+    <string name="install_busy_restore">System is currently restoring from a backup. Please wait.</string>
+    <string name="install_busy_delete">System is currently being deleted. Please wait.</string>
+    <string name="install_busy_import">A backup is being imported. Please wait.</string>
+    <string name="install_busy_generic">System is currently busy. Please wait.</string>
+
 </resources>

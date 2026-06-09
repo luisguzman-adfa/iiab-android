@@ -2185,22 +2185,36 @@ public class DeployFragment extends Fragment {
     private void setupAdbListeners() {
         LinearLayout containerDcpr = getView().findViewById(R.id.container_led_dcpr);
         containerDcpr.setOnClickListener(v -> {
-            if (isConnectedToAdb && android.os.Build.VERSION.SDK_INT >= 34) {
-                IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
-                adbManager.executeCommand("settings put global settings_enable_monitor_phantom_procs 0");
-                Snackbar.make(v, R.string.adb_snack_disabling_cp, Snackbar.LENGTH_SHORT).show();
-                new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
+            if (!isConnectedToAdb) {
+                Snackbar.make(v, R.string.adb_req_cp, Snackbar.LENGTH_LONG).show();
+                return;
             }
+            if (android.os.Build.VERSION.SDK_INT < 34) {
+                Snackbar.make(v, R.string.adb_not_req_cp, Snackbar.LENGTH_LONG).show();
+                return;
+            }
+
+            IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
+            adbManager.executeCommand("settings put global settings_enable_monitor_phantom_procs 0");
+            Snackbar.make(v, R.string.adb_snack_disabling_cp, Snackbar.LENGTH_SHORT).show();
+            new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
         });
 
         LinearLayout containerPpk = getView().findViewById(R.id.container_led_ppk);
         containerPpk.setOnClickListener(v -> {
-            if (isConnectedToAdb && android.os.Build.VERSION.SDK_INT >= 31) {
-                IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
-                adbManager.executeCommand("device_config put activity_manager max_phantom_processes 256");
-                Snackbar.make(v, R.string.adb_snack_setting_ppk, Snackbar.LENGTH_SHORT).show();
-                new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
+            if (!isConnectedToAdb) {
+                Snackbar.make(v, R.string.adb_req_ppk, Snackbar.LENGTH_LONG).show();
+                return;
             }
+            if (android.os.Build.VERSION.SDK_INT < 31) {
+                Snackbar.make(v, R.string.adb_not_req_ppk, Snackbar.LENGTH_LONG).show();
+                return;
+            }
+
+            IIABAdbManager adbManager = IIABAdbManager.getInstance(requireContext());
+            adbManager.executeCommand("device_config put activity_manager max_phantom_processes 256");
+            Snackbar.make(v, R.string.adb_snack_setting_ppk, Snackbar.LENGTH_SHORT).show();
+            new Handler(Looper.getMainLooper()).postDelayed(() -> adbManager.checkSystemRestrictions(requireContext()), 1000);
         });
 
         btnAdbAction.setOnClickListener(v -> {

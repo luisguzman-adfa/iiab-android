@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">IIAB-oA Controller</string>
-
     <string name="cancel">Cancelar</string>
     <string name="copy_all">Copiar Todo</string>
     <string name="fix_action">CORREGIR</string>
@@ -21,7 +20,6 @@
     <string name="setup_title">Configuración Inicial</string>
     <string name="setup_welcome">Bienvenido al asistente de configuración de %1$s.\n\nPara funcionar correctamente, necesitamos los siguientes permisos:</string>
     <string name="setup_continue">Continuar</string>
-
     <string name="setup_perm_battery">Desactivar Optimización de Batería</string>
     <string name="setup_perm_notifications">Notificaciones Push</string>
     <string name="setup_perm_storage">Acceso al almacenamiento local</string>
@@ -38,14 +36,12 @@
     <string name="dash_main_storage">Disco</string>
     <string name="dash_ram_memory">Memoria RAM</string>
     <string name="dash_swap_virtual">Swap (Virtual)</string>
-
     <string name="dash_server_status">Estado del Servidor:</string>
     <string name="dash_offline">Desconectado</string>
     <string name="dash_online">En línea</string>
     <string name="dash_iiab_system">Sistema IIAB-oA</string>
     <string name="dash_android_version_label">Versión base de Android:</string>
     <string name="dash_android_version_value">%1$s (API %2$s)</string>
-
     <string name="dash_state_debian_only">SO base instalado. Proceda a instalar IIAB.</string>
     <string name="dash_state_installer">Instalador detectado, abra la pestaña de instalación para más información.</string>
     <string name="dash_state_none">No se identificó ningún componente.</string>
@@ -86,7 +82,6 @@
     <string name="browse_content">🚀 Explorar Contenido</string>
     <string name="launch_server">🚀 Iniciar Servidor</string>
     <string name="stop_server">🛑 Detener Servidor</string>
-
     <string name="server_not_installed_warning">El sistema IIAB-oA no parece estar (completamente) instalado. Por favor, verifique la pestaña de Estado o Instalación para más información.</string>
     <string name="server_booting">Iniciando...</string>
     <string name="server_shutting_down">Apagando...</string>
@@ -177,20 +172,22 @@
     <string name="go_to_settings">Ir a Ajustes</string>
 
     <string name="app_started">Aplicación Iniciada</string>
+
     <string name="pref_file_internal">IIAB_Internal</string>
     <string name="pref_key_setup_complete">setup_complete</string>
     <string name="saved_toast">Guardado</string>
     <string name="settings_saved">Ajustes Guardados</string>
     <string name="version_footer_fallback">IIAB-oA · 2026 · Controller v0.3.xbeta</string>
     <string name="version_footer_format">IIAB-oA · 2026 · Controller %1$s</string>
-
     <string name="update_dialog_title">Nueva versión disponible: %1$s</string>
     <string name="update_dialog_message">¿Desea actualizar la aplicación?\n\nNovedades:\n%1$s</string>
     <string name="update_dialog_positive">Actualizar</string>
     <string name="update_dialog_negative">Más tarde</string>
+
     <string name="download_title">Actualizando IIAB Controller</string>
     <string name="download_description">Descargando nueva versión...</string>
     <string name="download_started_toast">Descarga iniciada...</string>
+
     <string name="ota_toast_checking">Buscando actualizaciones...</string>
     <string name="ota_toast_latest">Ya tiene la versión más reciente instalada.</string>
     <string name="ota_toast_error_server">Error contactando al servidor (%1$d)</string>
@@ -204,7 +201,9 @@
 
     <string name="install_header_fast">Instalación rápida</string>
     <string name="install_desc_fast">Provisiona un sistema IIAB precompilado, con datos opcionales para las aplicaciones principales.</string>
+
     <string name="install_header_roles">Gestión de módulos</string>
+
     <string name="install_header_maintenance">Mantenimiento y Recuperación</string>
     <string name="install_desc_maintenance">Realice tareas de gestión del sistema</string>
     <string name="install_warning_server_running">Por favor, apague el servidor antes de usar las herramientas de instalación y mantenimiento.</string>
@@ -212,8 +211,10 @@
 
     <string name="install_btn_install">Instalar</string>
     <string name="install_btn_reinstall">Reinstalar</string>
+    <string name="install_msg_termux_missing">Por favor, instale primero el sistema base Debian.</string>
     <string name="install_btn_delete">Eliminar</string>
     <string name="install_btn_launch">Iniciar instalación</string>
+
     <string name="install_btn_provision">Provisionar Sistema</string>
     <string name="install_btn_refresh">Actualizar</string>
     <string name="install_btn_reset">Reseteo completo</string>
@@ -232,21 +233,18 @@
     <string name="install_legend_wiki_plain">Wikipedia</string>
     <string name="install_legend_wiki_lang">Wikipedia (%1$s)</string>
 
-    <string name="install_msg_termux_missing">Por favor, instale primero el sistema base Debian.</string>
     <string name="install_adv_monitoring_title">Monitoreo avanzado</string>
     <string name="install_warning_discrepancy_icon">⚠️</string>
     <string name="install_warning_discrepancy_msg">Por favor revise la instalación manualmente, parece haber una discrepancia entre lo que está registrado y lo detectado.</string>
     <string name="install_msg_confirmed">Instalación del módulo confirmada con éxito, solo se permite una reinstalación.</string>
     <string name="install_msg_finished">¡Todas las instalaciones se han completado!</string>
     <string name="install_modules_disclaimer">La instalación de los módulos puede tardar varios minutos dependiendo de su velocidad de internet y el rendimiento de su dispositivo.</string>
-
     <string name="install_dialog_reset_title">Reseteo completo (Scratch Reset)</string>
     <string name="install_dialog_reset_msg">¿Está seguro? Esta acción borrará completamente la instalación actual y todos sus datos, requiriendo una instalación limpia desde la consola CLI.</string>
     <string name="install_dialog_reset_confirm">Sí, Resetear</string>
     <string name="install_dialog_reset_cancel">Cancelar</string>
     <string name="install_msg_offline_trusted">El servidor está apagado. El estado de los módulos es confiable y está actualizado.</string>
     <string name="install_msg_server_running_lock">Por favor, apague el servidor para poder gestionar los módulos.</string>
-
     <string name="install_adv_select_backup">▶ Seleccionar respaldo...</string>
     <string name="install_adv_select_backup_open">▼ Seleccionar respaldo...</string>
     <string name="install_msg_fetching_backups">Buscando respaldos...</string>
@@ -256,7 +254,6 @@
     <string name="install_msg_backup_details">Archivo: %1$s\nTamaño: %2$s\nFecha: %3$s</string>
     <string name="install_msg_restore_starting">Iniciando restauración de %1$s…</string>
     <string name="install_msg_select_backup_first">Por favor, seleccione un respaldo primero.</string>
-
     <string name="install_btn_cancel_title">¿Cancelar Instalación?</string>
     <string name="install_btn_cancel_msg">¿Está seguro que desea detener la descarga? El progreso actual se perderá.</string>
     <string name="install_btn_cancel_confirm">Sí, detener</string>
@@ -335,6 +332,7 @@
     <string name="adb_notif_desc">¡Puertos ADB encontrados! Toque \'Ingresar PIN\' abajo.</string>
     <string name="adb_notif_action_pin">Ingresar PIN</string>
     <string name="adb_notif_input_hint">Ingrese PIN de 6 dígitos</string>
+
     <string name="adb_toast_scan_timeout">Se agotó el tiempo de escaneo ADB. Intente de nuevo.</string>
 
     <string name="adb_status_connected">¡Conectado!</string>
@@ -355,6 +353,10 @@
     <string name="adb_cp_unknown"><![CDATA[Restricción de Procesos<br><b>(Desconocido)</b>]]></string>
     <string name="adb_cp_not_required"><![CDATA[Restricción de Procesos<br><small>(No requerido)</small>]]></string>
 
+    <string name="adb_req_cp">Para consultar o cambiar la restricción de procesos, ADB debe estar conectado.</string>
+    <string name="adb_not_req_cp">La corrección de restricción de procesos solo es necesaria para Android 14+.</string>
+    <string name="adb_req_ppk">Para consultar o cambiar Phantom Process Killer, ADB debe estar conectado.</string>
+    <string name="adb_not_req_ppk">La corrección de Phantom Process Killer solo es necesaria para Android 12/13+.</string>
     <string name="adb_snack_disabling_cp">Desactivando restricciones de procesos...</string>
     <string name="adb_snack_setting_ppk">Estableciendo límite PPK a 256...</string>
     <string name="adb_status_securing">Asegurando conexión...</string>
@@ -368,12 +370,13 @@
     <string name="adb_enforcer_btn_setup">Configurar</string>
     <string name="adb_enforcer_btn_ok">Aceptar</string>
 
-    <string name="sync_mode_share">Compartir Sistema</string>
+    <string name="sync_mode_share">Enviar Sistema</string>
     <string name="sync_mode_receive">Recibir Sistema</string>
 
-    <string name="sync_share_status_off">Servicio de compartición detenido</string>
-    <string name="sync_btn_start_server">Iniciar servicio de compartición</string>
-    <string name="sync_btn_stop_server">Detener servicio de compartición</string>
+    <string name="sync_share_status_off">Servicio de envío detenido</string>
+    <string name="sync_btn_start_server">Iniciar servicio de envío</string>
+    <string name="sync_btn_stop_server">Detener servicio de envío</string>
+
     <string name="sync_btn_scan_qr">Escanear Código QR</string>
 
     <string name="sync_transfer_filename">Sincronizando: %1$s...</string>
@@ -425,7 +428,7 @@
     <string name="sync_dialog_conn_failed_title">Conexión Fallida</string>
     <string name="sync_dialog_conn_failed_msg">No se puede alcanzar al Anfitrión en %1$s.\n¿Está seguro de que está conectado a la misma red Wi-Fi o Hotspot?</string>
 
-    <string name="sync_card_title_system">Compartir IIAB + Contenido</string>
+    <string name="sync_card_title_system">Enviar IIAB + Contenido</string>
     <string name="sync_card_desc_system">Cuando ambos dispositivos tienen la app Controller, puede compartir la plataforma IIAB y todo su contenido (desde cientos de MB hasta varios GB).</string>
     <string name="sync_card_title_apk">Compartir app Controller</string>
     <string name="sync_card_desc_apk">Para usar IIAB en Android, el otro dispositivo necesita la app primero. Esta función le permite compartirla localmente. ¡No requiere internet!</string>
@@ -472,7 +475,17 @@
     <string name="sync_share_status_init">Iniciando servidor...</string>
 
     <string name="tutorial_share_title">Transferencia vs. Acceso</string>
-    <string name="tutorial_share_heavy">¡Bienvenido a la sección Compartir! Aquí puedes clonar el sistema IIAB COMPLETO (hasta varios GB) en otro dispositivo. Este proceso puede tardar horas, lo cual no es lo mismo que el acceso compartido, que es instantáneo.</string>    <string name="tutorial_share_light">¿Buscas acceso instantáneo? ☝️\nSi solo quieres que otros lean Wikipedia o usen los Mapas al instante, ¡inicia el servidor y comparte el código QR de aquí arriba!</string>
+    <string name="tutorial_share_heavy">¡Bienvenido a la sección Enviar! Aquí puedes clonar el sistema IIAB COMPLETO (hasta varios GB) en otro dispositivo. Este proceso puede tardar horas, lo cual no es lo mismo que el acceso compartido, que es instantáneo.</string>
+    <string name="tutorial_share_light">¿Buscas acceso instantáneo? ☝️\nSi solo quieres que otros lean Wikipedia o usen los Mapas al instante, ¡inicia el servidor y comparte el código QR de aquí arriba!</string>
     <string name="tutorial_share_dont_show">No volver a mostrar</string>
     <string name="tutorial_share_got_it">¡Entendido!</string>
+
+    <string name="install_busy_provisioning">El sistema se está provisionando/reseteando. Por favor, espere.</string>
+    <string name="install_busy_modules">Se están instalando módulos. Por favor, espere.</string>
+    <string name="install_busy_backup">Hay un respaldo en progreso. Por favor, espere.</string>
+    <string name="install_busy_restore">El sistema se está restaurando desde un respaldo. Por favor, espere.</string>
+    <string name="install_busy_delete">El sistema se está eliminando. Por favor, espere.</string>
+    <string name="install_busy_import">Se está importando un respaldo. Por favor, espere.</string>
+    <string name="install_busy_generic">El sistema está ocupado actualmente. Por favor, espere.</string>
+
 </resources>
