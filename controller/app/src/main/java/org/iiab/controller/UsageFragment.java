@@ -454,4 +454,45 @@ public class UsageFragment extends Fragment implements View.OnClickListener {
         mainActivity.prefs.setDnsIpv6(edittext_dns_ipv6.getText().toString());
         mainActivity.prefs.setMaintenanceMode(checkbox_maintenance.isChecked());
     }
+    public void highlightServerButton() {
+        if (deckContainer == null || !isAdded()) return;
+
+        requireActivity().runOnUiThread(() -> {
+            // We save the original padding (the 3dp)
+            int pL = deckContainer.getPaddingLeft();
+            int pT = deckContainer.getPaddingTop();
+            int pR = deckContainer.getPaddingRight();
+            int pB = deckContainer.getPaddingBottom();
+
+            // We use ofArgb for a perfect color transition
+            android.animation.ValueAnimator colorAnim = android.animation.ValueAnimator.ofArgb(
+                    Color.TRANSPARENT,
+                    Color.parseColor("#00E5FF") // Color Cyan
+            );
+            colorAnim.setDuration(350);
+            colorAnim.setRepeatCount(5);
+            colorAnim.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+
+            float cornerRadius = getResources().getDisplayMetrics().density * 10; // ~10dp
+
+            colorAnim.addUpdateListener(animator -> {
+                int color = (int) animator.getAnimatedValue();
+                android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                gd.setColor(color);
+                gd.setCornerRadius(cornerRadius);
+                deckContainer.setBackground(gd);
+                deckContainer.setPadding(pL, pT, pR, pB);
+            });
+
+            colorAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator animation) {
+                    deckContainer.setBackgroundColor(Color.TRANSPARENT);
+                    deckContainer.setPadding(pL, pT, pR, pB);
+                }
+            });
+
+            colorAnim.start();
+        });
+    }
 }

@@ -289,6 +289,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         MainPagerAdapter pagerAdapter = new MainPagerAdapter(this);
         viewPager.setAdapter(pagerAdapter);
+        viewPager.setOffscreenPageLimit(3);
 
         new TabLayoutMediator(tabLayout, viewPager, (tab, position) -> {
             switch (position) {
@@ -544,6 +545,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // --- QR Share Button Logic ---
         btnShareQr.setOnClickListener(v -> {
             if (!isServerAlive) {
+                if (viewPager != null) {
+                    viewPager.setCurrentItem(1, true);
+                }
+                if (usageFragment != null) {
+                    new Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                        usageFragment.highlightServerButton();
+                    }, 350);
+                }
+
                 // Rule 1: Server must be running
                 Snackbar.make(findViewById(android.R.id.content), R.string.qr_error_no_server, Snackbar.LENGTH_LONG).show();
                 return;
@@ -2136,6 +2146,17 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (realBtn != null && fakeBtn != null) {
             // We copy the icon you are currently using
             fakeBtn.setImageDrawable(realBtn.getDrawable());
+
+            fakeBtn.setOnClickListener(v -> {
+                tutorialView.animate()
+                        .alpha(0f)
+                        .setDuration(300)
+                        .withEndAction(() -> {
+                            root.removeView(tutorialView);
+                            realBtn.performClick();
+                        })
+                        .start();
+            });
 
             // We wait for the screen to finish drawing to obtain precise coordinates
             tutorialView.post(() -> {
