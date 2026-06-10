@@ -493,8 +493,7 @@
     <string name="install_busy_generic">O sistema está ocupado no momento. Por favor, aguarde.</string>
 
     <string name="sync_error_arch_title">Arquitetura incompatível</string>
-    <string name="sync_error_arch_hardware_32">Incompatibilidade de hardware.\n\nO Hospedeiro está compartilhando un sistema de 64-bits, mas o seu dispositivo é de 32-bits. É fisicamente impossível realizar esta transferência.</string>
-    <string name="sync_error_arch_fixable">Incompatibilidade de aplicativo.\n\nO Hospedeiro está usando um sistema de 32-bits. Para sincronizar, desinstale este aplicativo, peça ao Hospedeiro para compartilhar o aplicativo (APK) dele e instale-o.\n\nO seu hardware é compatível, você só precisa do aplicativo correspondente!</string>
+    <string name="sync_error_arch_hardware_32">Incompatibilidade de hardware.\n\nO Hospedeiro está compartilhando um sistema de 64-bits, mas o seu dispositivo é de 32-bits. É impossível executar o sistema hospedeiro no seu dispositivo.</string>    <string name="sync_error_arch_fixable">Incompatibilidade de aplicativo.\n\nO Hospedeiro está usando um sistema de 32-bits. Para sincronizar, desinstale este aplicativo, peça ao Hospedeiro para compartilhar o aplicativo (APK) dele e instale-o.\n\nO seu hardware é compatível, você só precisa do aplicativo correspondente!</string>
     <string name="sync_error_arch_strict_64">Incompatibilidade de hardware.\n\nO Hospedeiro está enviando um sistema de 32-bits, mas o seu dispositivo possui um processador de nova geração que suporta APENAS operações estritas de 64-bits. Transferência bloqueada para evitar um sistema corrompido.</string>
     <string name="sync_app_arch_label">Arq. do App: %1$d-bit</string>
     <string name="sync_msg_arch_compatible">Hardware compatível. Iniciando conexão...</string>

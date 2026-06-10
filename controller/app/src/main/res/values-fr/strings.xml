@@ -491,8 +491,7 @@
     <string name="install_busy_generic">Le système est actuellement occupé. Veuillez patienter.</string>
 
     <string name="sync_error_arch_title">Architecture incompatible</string>
-    <string name="sync_error_arch_hardware_32">Incompatibilité matérielle.\n\nL\'Hôte partage un système 64 bits, mais votre appareil est en 32 bits. Il est physiquement impossible d\'effectuer ce transfert.</string>
-    <string name="sync_error_arch_fixable">Incompatibilité de l\'application.\n\nL\'Hôte utilise un système 32 bits. Pour synchroniser, désinstallez cette application, demandez à l\'Hôte de partager son application (APK) et installez-la.\n\nVotre matériel est compatible, il vous suffit d\'avoir l\'application correspondante !</string>
+    <string name="sync_error_arch_hardware_32">Incompatibilité matérielle.\n\nL\'Hôte partage un système 64 bits, mais votre appareil est en 32 bits. Il est impossible d\'exécuter le système hôte sur votre appareil.</string>    <string name="sync_error_arch_fixable">Incompatibilité de l\'application.\n\nL\'Hôte utilise un système 32 bits. Pour synchroniser, désinstallez cette application, demandez à l\'Hôte de partager son application (APK) et installez-la.\n\nVotre matériel est compatible, il vous suffit d\'avoir l\'application correspondante !</string>
     <string name="sync_error_arch_strict_64">Incompatibilité matérielle.\n\nL\'Hôte envoie un système 32 bits, mais votre appareil possède un processeur de nouvelle génération qui prend UNIQUEMENT en charge les opérations 64 bits strictes. Transfert bloqué pour éviter un système défectueux.</string>
     <string name="sync_app_arch_label">Arch. de l\'App : %1$d-bit</string>
     <string name="sync_msg_arch_compatible">Matériel compatible. Démarrage de la connexion...</string>
