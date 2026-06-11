@@ -62,6 +62,15 @@ jobs:
           echo "$ENCODED_STRING" | base64 -d > keystore.jks
 
       # --- BUILD AND SIGNING ---
+
+      - name: Log Pinned Binary Version
+        run: |
+          echo "=========================================="
+          echo "Compiling with native binaries pinned to:"
+          cat binary_version.txt
+          echo ""
+          echo "=========================================="
+
       # We use assembleRelease to match the production signature. 
       # This prevents testers from having to uninstall the app (and lose data) between updates.
       - name: Build and Sign APK

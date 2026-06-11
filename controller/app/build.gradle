@@ -175,38 +175,41 @@ task syncNativeArtifacts {
             // Ensure assets directory exists
             if (!assetsDir.exists()) assetsDir.mkdirs()
 
-            // 1. Fetch Releases from GitHub API
-            def apiUrl = new URL("https://api.github.com/repos/${repoName}/releases")
+            // 1. Read the pinned version from the anchor file
+            def versionFile = rootProject.file("binary_version.txt")
+            if (!versionFile.exists()) {
+                throw new GradleException(">> [IIAB Hook] ERROR: Anchor file not found at ${versionFile.absolutePath}")
+            }
+
+            def targetTag = versionFile.text.trim()
+            println "   -> Target tag pinned to: ${targetTag}"
+
+            // 2. Fetch the exact Release directly from GitHub API
+            def apiUrl = new URL("https://api.github.com/repos/${repoName}/releases/tags/${targetTag}")
             def connection = (HttpURLConnection) apiUrl.openConnection()
             connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
 
             if (connection.responseCode != 200) {
-                throw new GradleException("GitHub API returned error: ${connection.responseCode}")
+                throw new GradleException(">> [IIAB Hook] GitHub API error: Tag ${targetTag} not found (HTTP ${connection.responseCode})")
             }
 
             def slurper = new JsonSlurper()
-            def releases = slurper.parse(connection.inputStream)
-
-            // 2. Find the newest release that starts with 'binaries-'
-            def latestRelease = releases.find { it.tag_name.startsWith('binaries-') }
-            if (latestRelease == null) {
-                throw new GradleException("No rolling releases found with tag 'binaries-'")
-            }
+            def targetRelease = slurper.parse(connection.inputStream)
 
             // 3. Smart Caching: Skip if we already have this exact release!
             def currentTag = tagTrackerFile.exists() ? tagTrackerFile.text.trim() : ""
-            if (currentTag == latestRelease.tag_name) {
+            if (currentTag == targetRelease.tag_name) {
                 println "   -> [CACHED] Artifacts are up to date (${currentTag}). Skipping download."
                 return // Exits the task immediately, saving time!
             }
 
-            // 4. Find the zip asset URL
-            def zipAsset = latestRelease.assets.find { it.name == 'termux-binaries-latest.zip' }
+            // 4. Find the zip asset URL in the targeted release
+            def zipAsset = targetRelease.assets.find { it.name == 'termux-binaries-latest.zip' }
             if (zipAsset == null) {
-                throw new GradleException("Zip asset not found in release ${latestRelease.tag_name}")
+                throw new GradleException(">> [IIAB Hook] Zip asset not found in release ${targetRelease.tag_name}")
             }
 
-            println "   -> Found new binaries: ${latestRelease.tag_name}"
+            println "   -> Found matching binaries: ${targetRelease.tag_name}"
             println "   -> Downloading ZIP (approx ~15MB)..."
 
             // 5. Download the ZIP to the build/ directory
@@ -235,7 +238,7 @@ task syncNativeArtifacts {
             }
 
             // 8. Update our local tracker file with the new tag
-            tagTrackerFile.text = latestRelease.tag_name
+            tagTrackerFile.text = targetRelease.tag_name
 
             println ">> [IIAB Hook] Successfully synced and extracted native artifacts!"
 
