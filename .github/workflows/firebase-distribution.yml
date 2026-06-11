@@ -1,0 +1,166 @@
+name: Deploy to Firebase App Distribution
+
+on:
+  #  push:
+  #    branches:
+  #      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    name: Build & Distribute
+    runs-on: ubuntu-latest
+    
+    # The Android code is located in the ./controller directory
+    defaults:
+      run:
+        working-directory: ./controller
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0 # Required to read the commit history
+
+      # TODO: Add a step here to check if there are meaningful changes 
+      # before proceeding with the build to save CI minutes (similar to CoGo's workflow).
+      # - name: Check for meaningful changes
+      #   id: check_changes
+      #   run: |
+      #     DIFF_COUNT=$(git diff --name-only origin/main..HEAD | wc -l | tr -d ' ' || echo "0")
+      #     if [[ "$DIFF_COUNT" -eq 0 ]]; then
+      #       echo "::notice::Skipping build for branch identical to main"
+      #       echo "must_build=false" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "must_build=true" >> $GITHUB_OUTPUT
+      #     fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # --- SECRETS MANAGEMENT ---
+
+      - name: Create google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          # This assumes the app module folder is named 'app' inside 'controller'
+          echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+
+      - name: Decode Keystore
+        env:
+          ENCODED_STRING: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$ENCODED_STRING" | base64 -d > keystore.jks
+
+      # --- BUILD AND SIGNING ---
+      # We use assembleRelease to match the production signature. 
+      # This prevents testers from having to uninstall the app (and lose data) between updates.
+      - name: Build and Sign APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # TODO: Add gradle start/end timers here for the CI performance script
+          # echo "gradle_time_start=$(date +%s)" >> $GITHUB_ENV
+          
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+          
+          # echo "gradle_time_end=$(date +%s)" >> $GITHUB_ENV
+
+      - name: Find APK
+        id: find_apk
+        run: |
+          # Locate the compiled APK (adjust the path if building a universal APK)
+          apk_path=$(find . -path "*/build/outputs/apk/release/*.apk" | head -n 1)
+          echo "APK_PATH=$apk_path" >> $GITHUB_OUTPUT
+
+      # --- RELEASE NOTES ---
+
+      - name: Prepare Release Notes
+        id: prepare_notes
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B | head -1)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          
+          # TODO: Integrate Jira API here to extract the ticket ID and fetch the title
+          # JIRA_TICKET=$(echo "$COMMIT_MSG" | grep -o 'ADFA-[0-9]\+' | head -1)
+          # if [ -n "$JIRA_TICKET" ] && [ -n "${{ secrets.JIRA_API_TOKEN }}" ]; then
+          #   JIRA_TITLE=$(curl -s -u "${{ secrets.JIRA_EMAIL }}:${{ secrets.JIRA_API_TOKEN }}" \
+          #     "https://appdevforall.atlassian.net/rest/api/3/issue/${JIRA_TICKET}?fields=summary" \
+          #     | jq -r '.fields.summary // ""')
+          #   [ -n "$JIRA_TITLE" ] && COMMIT_MSG="$JIRA_TITLE"
+          # fi
+
+          # Create a temporary file with the release notes
+          NOTES_FILE=$(mktemp)
+          echo "Author: $COMMIT_AUTHOR" > "$NOTES_FILE"
+          echo "Message: $COMMIT_MSG" >> "$NOTES_FILE"
+          
+          echo "NOTES_FILE=$NOTES_FILE" >> $GITHUB_OUTPUT
+
+      # --- FIREBASE DEPLOYMENT ---
+
+      # TODO: Consider migrating to Workload Identity Federation (WIF)
+      # Uncomment the block below and remove the Service Account JSON step when ready.
+      # - name: Authenticate to Google Cloud via Workload Identity
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+      #     service_account: ${{ secrets.IDENTITY_EMAIL }}
+
+      - name: Authenticate with Firebase
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Setup Firebase CLI
+        run: npm install -g firebase-tools
+
+      # TODO: Run CI performance script before distributing
+      # - name: Write CI Performance Data
+      #   run: |
+      #     apk_size_bytes=$(stat -c '%s' ${{ steps.find_apk.outputs.APK_PATH }})
+      #     uv run scripts/insert-ci-perf-data.py $(basename ${{ steps.find_apk.outputs.APK_PATH }}) ${{ env.gradle_time_start }} ${{ env.gradle_time_end }} $apk_size_bytes
+
+      - name: Upload to Firebase App Distribution
+        env:
+          APK_PATH: ${{ steps.find_apk.outputs.APK_PATH }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          NOTES_FILE: ${{ steps.prepare_notes.outputs.NOTES_FILE }}
+        run: |
+          firebase appdistribution:distribute "$APK_PATH" \
+            --app "$FIREBASE_APP_ID" \
+            --groups "testers" \
+            --release-notes-file "$NOTES_FILE"
+
+      # TODO: Add a step here to send a rich Slack notification
+      # - name: Send Slack Notification
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #   run: |
+      #     curl -X POST -H "Content-type: application/json" \
+      #     --data '{"text":"🚀 New build deployed to Firebase! Author: ${{ steps.prepare_notes.outputs.COMMIT_AUTHOR }}"}' \
+      #     "$SLACK_WEBHOOK"
+
+      # --- SECURITY CLEANUP ---
+
+      - name: Cleanup Secrets and Temp Files
+        if: always()
+        run: |
+          rm -f keystore.jks
+          rm -f app/google-services.json
+          rm -f ${{ steps.prepare_notes.outputs.NOTES_FILE }}
