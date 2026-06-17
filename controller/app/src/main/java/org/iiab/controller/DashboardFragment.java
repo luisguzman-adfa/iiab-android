@@ -567,12 +567,7 @@ public class DashboardFragment extends Fragment {
 
     // Extracts the numbers (in kB) from the lines of /proc/meminfo
     private long parseMemLine(String line) {
-        try {
-            String[] parts = line.split("\\s+");
-            return Long.parseLong(parts[1]);
-        } catch (Exception e) {
-            return 0;
-        }
+        return SystemStatsUtil.parseMemLine(line);
     }
 
     // --- METHODS FOR OBTAINING IPs ---
@@ -719,13 +714,7 @@ public class DashboardFragment extends Fragment {
     }
 
     private String getDebianArch(String androidArch) {
-        if (androidArch == null || androidArch.equals("N/A")) return "N/A";
-        String lower = androidArch.toLowerCase();
-
-        if (lower.contains("arm64") || lower.contains("aarch64")) return "arm64";
-        if (lower.contains("armeabi") || lower.contains("armv7")) return "armhf";
-
-        return lower;
+        return SystemStatsUtil.getDebianArch(androidArch);
     }
 
     // Converter from DP to actual screen pixels
