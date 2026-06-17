@@ -31,8 +31,16 @@ jobs:
     - name: Grant Execute Permission to Gradlew
       run: chmod +x gradlew
 
-#    - name: Run Android Lint (Syntax & Rules Check)
-#      run: ./gradlew lintDebug
+    # Phase 0 safety net: unit tests are a BLOCKING gate.
+    - name: Run Unit Tests
+      run: ./gradlew testDebugUnitTest --stacktrace
+
+    # Lint runs for visibility only and never blocks the job (continue-on-error).
+    # Scoped to :app so the vendored termux-core/upstream lint backlog does not fail CI.
+    # Once the :app lint backlog is triaged, set abortOnError=true and drop continue-on-error.
+    - name: Run Android Lint (reporting, non-blocking)
+      continue-on-error: true
+      run: ./gradlew :app:lintDebug
 
     - name: Compile Test (Assemble Debug)
       run: ./gradlew assembleDebug --stacktrace
