@@ -105,6 +105,14 @@ android {
         abortOnError false
     }
 
+    testOptions {
+        unitTests {
+            // Let JVM unit tests stub Android framework calls (e.g. android.util.Log)
+            // so framework-free logic can be tested without an emulator.
+            returnDefaultValues = true
+        }
+    }
+
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
@@ -149,6 +157,8 @@ dependencies {
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
+    // Real org.json so SyncHandshakeHelper JSON logic can run in JVM unit tests
+    testImplementation 'org.json:json:20231013'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
 }
