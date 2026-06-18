@@ -19,6 +19,20 @@ _Last updated: 2026-06-16. Tracks remediation work against the findings below. I
 - **K5**: unit test validating the layout grid (`IIABExtraKeysTest`). DONE.
 - Remaining: point the submodule to `appdevforall/termux-app` at clean upstream and commit the pointer.
 
+<<<<<<< Updated upstream
+=======
+**Reference slice — Rootfs live sizes (Clean Architecture pilot): DONE** (PR #6, merged)
+- First feature built across all three layers (`org.iiab.controller.rootfs.{domain,data,presentation}` + `util/ByteFormatter`); serves as the copy-paste template for future slices. See root `CLAUDE.md` (design map) and `ROOTFS_SIZE_PILOT_ANALYSIS.md`.
+- Replaced the hardcoded `OS_*_GB` constants with live sizes from the Deploy server (`latest_*.meta4`), with per-ABI byte fallbacks for offline/error. Domain is pure JVM and unit-tested (`GetRootfsSizeUseCaseTest`, `ByteFormatterTest`).
+- **Strangler step (DONE):** `DeployFragment`'s projection UI now consumes `RootfsViewModel` directly (observes live/fallback OS size) instead of going through `InstallationPlanner.resolveOsSizeGb()`. `InstallationPlanner.calculateProjectedSize` gained a `osSizeGb` overload so the OS-size resolution leaves the planner; the legacy overload (still resolving internally) is retained only for the non-UI install flow.
+- **Offline UX (DONE):** addresses the "connectivity gating" watch item. `checkInternetAccess()` now stores a `hasInternet` flag; `updateDynamicButtons()` disables the install button (label "No connection") and the click listener shows a snackbar instead of starting a doomed download; an "Estimated sizes (offline)" caption shows whenever the size is a fallback (`RootfsUiState.live == false`); and offline we skip the live fetch (new `attemptLive` flag on the use case / ViewModel) to avoid the ~6 s timeout. The gauge itself was intentionally left untouched.
+- Remaining (optional): later remove the legacy `resolveOsSizeGb` path once the install flow no longer needs it.
+
+**Slice — Device architecture (`org.iiab.controller.deviceinfo`): DONE** (refactor-by-feature while fixing a dashboard bug)
+- Bug: the dashboard "device architecture" field reported the *app's* ABI (via `nativeLibraryDir`), so a 32-bit build on a 64-bit device wrongly showed 32-bit (we install the 32-bit app on 64-bit hardware to test the 32-bit path).
+- Fix: new layered slice — `domain` (`DeviceAbiProvider` port + `GetDeviceArchUseCase`, prefer-64-bit rule, pure JVM) and `data` (`BuildDeviceAbiProvider` reading device-level `Build.SUPPORTED_*_ABIS`). `DashboardFragment` now shows the real device arch; `getTermuxArch()` stays for app/content arch (modules, termux, debian). Unit test `GetDeviceArchUseCaseTest` covers the 32-bit-app-on-64-bit-device case.
+
+>>>>>>> Stashed changes
 **Phases 1–4: NOT STARTED.** Next: Phase 1 security — **D2**, **D6**, **S1**, **S3**, **M4**, **D12**.
 
 ## 1. Executive summary
