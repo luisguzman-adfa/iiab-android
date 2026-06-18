@@ -4,17 +4,17 @@
 
 ## Progress log
 
-_Last updated: 2026-06-16. Tracks remediation work against the findings below. IDs map to the register in this file (F/D/S/M) and to `FORK_DELTA_ANALYSIS.md` (K)._
+_Last updated: 2026-06-17. Tracks remediation work against the findings below. IDs map to the register in this file (F/D/S/M) and to `FORK_DELTA_ANALYSIS.md` (K)._
 
-**Phase 0 — Guardrails: DONE** (PR `chore/phase0-guardrails`)
+**Phase 0 — Guardrails: DONE** (PR `chore/phase0-guardrails`, merged as #4)
 - Extracted `SystemStatsUtil` and added the first JVM unit tests (`SystemStatsUtilTest`, `SyncHandshakeHelperTest`); added unit-test infra (`returnDefaultValues` + real `org.json`). Addresses **M10**.
 - CI gate: blocking `testDebugUnitTest`, blocking `:app:lintDebug` (grandfathered via a committed `lint-baseline.xml`), and the `assembleDebug` compile gate. Addresses **M11**.
 - Added a root `.gitignore` and `FORK_DELTA_ANALYSIS.md`.
 - **Hardening (DONE):** lint is now a hard gate for `:app` — `abortOnError true` + committed `lint-baseline.xml`, and CI dropped `continue-on-error`. Existing backlog grandfathered; new lint errors fail the build. (Generate/commit the baseline once: `./gradlew :app:lintDebug`.)
 - **Tests broadened (DONE):** extracted the `local_vars.yml` reader to a pure, unit-tested `util/LocalVarsYamlParser` (`LocalVarsYamlParserTest`) — the "YAML parser" item and first step on tech-debt **D14**. Notes on the other two named targets: `LogManager.getFormattedSize` is Android-coupled (`Context` + string resources) and its byte→human formatting is already covered by the tested `util/ByteFormatter`; `InstallationPlanner` OS sizing moved into the rootfs domain (covered by `GetRootfsSizeUseCaseTest` / `ByteFormatterTest`), so no separate pure sizing remains there to test.
 
-**K1 — Fork delta (Termux ExtraKeys): IN PROGRESS** (PR `feat/k1-extrakeys-in-app`; details in `FORK_DELTA_ANALYSIS.md`)
-- **K1**: `loadIIABDefaultKeys()` moved out of upstream `ExtraKeysView` into app `IIABExtraKeys` (public APIs only). DONE (app side).
+**K1 — Fork delta (Termux ExtraKeys): DONE** (PR `feat/k1-extrakeys-in-app`, merged as #5; details in `FORK_DELTA_ANALYSIS.md`)
+- **K1**: `loadIIABDefaultKeys()` moved out of upstream `ExtraKeysView` into app `IIABExtraKeys` (public APIs only). DONE.
 - **K3**: layout is now a single-source-of-truth constant. DONE.
 - **K4**: falls back to a minimal layout if the default fails to load. DONE.
 - **K5**: unit test validating the layout grid (`IIABExtraKeysTest`). DONE.
@@ -31,7 +31,12 @@ _Last updated: 2026-06-16. Tracks remediation work against the findings below. I
 - Bug: the dashboard "device architecture" field reported the *app's* ABI (via `nativeLibraryDir`), so a 32-bit build on a 64-bit device wrongly showed 32-bit (we install the 32-bit app on 64-bit hardware to test the 32-bit path).
 - Fix: new layered slice — `domain` (`DeviceAbiProvider` port + `GetDeviceArchUseCase`, prefer-64-bit rule, pure JVM) and `data` (`BuildDeviceAbiProvider` reading device-level `Build.SUPPORTED_*_ABIS`). `DashboardFragment` now shows the real device arch; `getTermuxArch()` stays for app/content arch (modules, termux, debian). Unit test `GetDeviceArchUseCaseTest` covers the 32-bit-app-on-64-bit-device case.
 
-**Phases 1–4: NOT STARTED.** Next: Phase 1 security — **D2**, **D6**, **S1**, **S3**, **M4**, **D12**.
+**S1 — Sync credential injection (Phase 1 security): DONE** (PR `feat/phase1-security-sync-credential-validation`)
+- Closes **S1**: QR-scanned sync credentials (host/port/user/pass) were interpolated into `rsyncd.conf` and the `rsync://` client URL unescaped, enabling config-directive and URL injection.
+- New pure domain rule `org.iiab.controller.sync.domain.SyncCredentialValidator` (strict user/host charsets, port range, control-char-free password, `isSafeConfigValue` for config lines). Unit-tested (`SyncCredentialValidatorTest`) plus three new malicious-payload cases in `SyncHandshakeHelperTest`.
+- Validation applied at the untrusted boundary (`SyncHandshakeHelper.parsePayload` -> `null` on invalid) and defensively in `RsyncManager` (server config + client URL paths), with a new `rsync_error_invalid_credentials` string (en + es). The validator is the reusable contract the remaining injection fixes (**S4**, **D2**) can build on.
+
+**Phase 1 — Security hardening: IN PROGRESS.** **S1** done (above); remaining Phase 1 targets: **D2**, **D6**, **S3**, **M4**, **D12**, **S4**.
 
 ## 1. Executive summary
 
