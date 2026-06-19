@@ -109,7 +109,7 @@
             android:text="@string/control_enable"
             android:textSize="20sp"
             android:textStyle="bold"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_on_accent"
             android:background="@drawable/rounded_button"
             android:backgroundTint="@color/btn_vpn_off"
             android:textAllCaps="false"
@@ -138,7 +138,7 @@
             android:text="@string/browse_content"
             android:textSize="21sp"
             android:textStyle="bold"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/text_on_accent"
             android:background="@drawable/rounded_button"
             android:backgroundTint="@color/btn_explore_disabled"
             android:textAllCaps="false"
@@ -179,8 +179,8 @@
                 android:text="@string/apps"
                 android:layout_marginBottom="12dp"
                 android:background="@drawable/rounded_button"
-                android:backgroundTint="#673AB7"
-                android:textColor="#FFFFFF"
+                android:backgroundTint="@color/accent_secondary"
+                android:textColor="@color/text_on_accent"
                 android:textAllCaps="false" />
 
             <TextView
@@ -227,7 +227,7 @@
                 android:text="@string/maintenance_warning_msg"
                 android:textSize="11sp"
                 android:textStyle="italic"
-                android:textColor="#FF9800"
+                android:textColor="@color/status_warning"
                 android:layout_marginBottom="8dp"
                 android:visibility="gone" />
 
@@ -238,8 +238,8 @@
                 android:text="@string/save"
                 android:layout_marginTop="8dp"
                 android:background="@drawable/rounded_button"
-                android:backgroundTint="#555555"
-                android:textColor="#FFFFFF"
+                android:backgroundTint="@color/btn_neutral"
+                android:textColor="@color/text_on_accent"
                 android:textAllCaps="false" />
 
             <TextView
@@ -396,7 +396,7 @@
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="12dp"
             android:layout_marginBottom="8dp"
-            android:background="#00000000"
+            android:background="@android:color/transparent"
             android:padding="3dp"
             android:orientation="horizontal">
 
@@ -407,13 +407,13 @@
                 android:text="Launch Server"
                 android:textSize="20sp"
                 android:textStyle="bold"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/text_on_accent"
                 android:background="@drawable/rounded_button"
                 android:backgroundTint="@color/btn_success"
                 android:textAllCaps="false"
                 app:progressButtonHeight="6dp"
                 app:progressButtonDuration="@integer/server_cool_off_duration_ms"
-                app:progressButtonColor="#FF9800" />
+                app:progressButtonColor="@color/status_warning" />
         </LinearLayout>
 
         <View
@@ -463,8 +463,8 @@
             android:id="@+id/connection_log"
             android:layout_width="match_parent"
             android:layout_height="250dp"
-            android:background="#000000"
-            android:textColor="#00FF00"
+            android:background="@color/terminal_background"
+            android:textColor="@color/terminal_text"
             android:padding="8dp"
             android:visibility="gone"
             android:scrollbars="vertical"
@@ -502,7 +502,7 @@
                 android:textSize="12sp"
                 android:background="@drawable/rounded_button"
                 android:backgroundTint="@color/btn_danger"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/text_on_accent"
                 android:textAllCaps="false"
                 android:layout_marginEnd="4dp" />
 
@@ -515,7 +515,7 @@
                 android:textSize="12sp"
                 android:background="@drawable/rounded_button"
                 android:backgroundTint="@color/btn_success"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/text_on_accent"
                 android:textAllCaps="false"
                 android:layout_marginStart="4dp" />
         </LinearLayout>

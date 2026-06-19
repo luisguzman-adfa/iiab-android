@@ -267,13 +267,13 @@ public class UsageFragment extends Fragment implements View.OnClickListener {
             button_browse_content.setEnabled(true);
             button_browse_content.setBackgroundTintList(ContextCompat.getColorStateList(requireContext(), R.color.btn_explore_disabled));
             button_browse_content.setAlpha(1.0f);
-            button_browse_content.setTextColor(Color.WHITE);
+            button_browse_content.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent));
         } else if (mainActivity.isNegotiating) {
             button_browse_content.setEnabled(true);
-            button_browse_content.setTextColor(Color.WHITE);
+            button_browse_content.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent));
         } else {
             button_browse_content.setEnabled(true);
-            button_browse_content.setTextColor(Color.WHITE);
+            button_browse_content.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_on_accent));
             button_browse_content.setBackgroundTintList(ContextCompat.getColorStateList(requireContext(), R.color.btn_explore_ready));
             button_browse_content.setAlpha(1.0f);
         }
@@ -467,7 +467,7 @@ public class UsageFragment extends Fragment implements View.OnClickListener {
             // We use ofArgb for a perfect color transition
             android.animation.ValueAnimator colorAnim = android.animation.ValueAnimator.ofArgb(
                     Color.TRANSPARENT,
-                    Color.parseColor("#00E5FF") // Color Cyan
+                    ContextCompat.getColor(requireContext(), R.color.status_info) // Color Cyan
             );
             colorAnim.setDuration(350);
             colorAnim.setRepeatCount(5);
