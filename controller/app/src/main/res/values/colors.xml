@@ -75,7 +75,6 @@
     <color name="chart_maps">#EF6C00</color>
     <color name="chart_wiki">#2E7D32</color>
     <color name="chart_track">#C4C7CC</color>
-
     <!-- Round 2 (Usage/Install/Share migration) — twins in values-night -->
     <color name="surface_active_success">#E6F4EA</color>
     <color name="surface_active_info">#E3F0FB</color>
