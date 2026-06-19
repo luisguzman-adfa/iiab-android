@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="?android:attr/windowBackground">
+    android:background="@color/surface_background">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -19,7 +19,7 @@
             android:layout_height="48dp"
             android:orientation="horizontal"
             android:background="@drawable/rounded_button"
-            android:backgroundTint="@color/btn_neutral"
+            android:backgroundTint="@color/surface_section"
             android:layout_marginBottom="24dp">
 
             <RadioButton
@@ -86,7 +86,7 @@
                     android:layout_height="40dp"
                     android:orientation="horizontal"
                     android:background="@drawable/rounded_button"
-                    android:backgroundTint="@color/btn_neutral"
+                    android:backgroundTint="@color/surface_section"
                     android:layout_marginBottom="16dp"
                     android:visibility="gone"
                     tools:visibility="visible">
@@ -152,7 +152,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/rounded_button"
-                android:backgroundTint="@color/surface_card"
+                android:backgroundTint="@color/dash_module_bg"
                 android:padding="16dp"
                 android:layout_marginBottom="16dp">
 
@@ -192,7 +192,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/rounded_button"
-                android:backgroundTint="@color/surface_card"
+                android:backgroundTint="@color/dash_module_bg"
                 android:padding="16dp"
                 android:layout_marginBottom="16dp">
 
@@ -241,7 +241,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:background="@drawable/rounded_button"
-                android:backgroundTint="@color/surface_card"
+                android:backgroundTint="@color/dash_module_bg"
                 android:padding="16dp"
                 android:layout_marginBottom="16dp">
 
