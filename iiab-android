@@ -414,7 +414,8 @@ install_iiaboa_dashboard() {
 
   # Copy dashboard files
   mkdir -p "$dash_dest"
-  rsync -Aax "${dash_src}/" "$dash_dest/"
+  #rsync -Aax "${dash_src}/" "$dash_dest/"
+  cp -a "${dash_src}/." "$dash_dest/"
 
   # Install node dependencies
   log "Installing Node dependencies for the dashboard..."
